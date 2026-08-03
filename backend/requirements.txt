@@ -1,0 +1,29 @@
+# Orbital Risk Advisor — Python backend dependencies
+# Versions pinned to latest stable as of project start (Python 3.14, Windows x64).
+# Install into a venv:
+#   python -m venv backend/.venv
+#   backend\.venv\Scripts\activate      (Windows)
+#   source backend/.venv/bin/activate   (macOS/Linux)
+#   pip install -r backend/requirements.txt
+
+# Orbital mechanics
+sgp4==2.23
+skyfield==1.49
+
+# Scientific computing
+numpy==2.5.1
+scipy==1.18.0
+astropy==8.0.1
+
+# Backend API
+fastapi==0.141.1
+uvicorn==0.52.1
+
+# AI layer
+anthropic==0.120.2
+
+# Config / environment
+python-dotenv==1.2.1
+
+# Testing
+pytest==8.4.1

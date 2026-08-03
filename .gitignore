@@ -1,0 +1,101 @@
+﻿# =============================================================
+# Orbital Risk Advisor — .gitignore
+# =============================================================
+
+# ------------------------------------------------------------
+# Secrets — NEVER commit these
+# ------------------------------------------------------------
+.env
+*.env
+.env.*
+!.env.example
+
+# ------------------------------------------------------------
+# Python
+# ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+.venv/
+venv/
+ENV/
+env/
+pip-wheel-metadata/
+*.whl
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.lcov
+
+# mypy / pyright
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# ------------------------------------------------------------
+# TLE data cache (fetch live — don't commit large data dumps)
+# ------------------------------------------------------------
+data/
+*.tle
+*.txt.cache
+tle_cache/
+celestrak_cache/
+
+# ------------------------------------------------------------
+# Node / Frontend
+# ------------------------------------------------------------
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/dist/
+frontend/build/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+.npm
+.yarn/cache
+.yarn/unplugged
+.pnp.*
+
+# ------------------------------------------------------------
+# OS / editor
+# ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ------------------------------------------------------------
+# Demo / fallback video (large binary — store externally)
+# ------------------------------------------------------------
+demo/fallback/*.mp4
+demo/fallback/*.mov
+demo/fallback/*.mkv
+
+# ------------------------------------------------------------
+# Misc
+# ------------------------------------------------------------
+*.log
+*.tmp
+*.bak
+.bob/
