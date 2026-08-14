@@ -94,6 +94,7 @@ Don't introduce a different orbital mechanics library, a different frontend fram
 - Read `/docs/pitch-script.md` to understand what will actually be demoed — this should inform which edge cases matter (the Envisat and Cosmos 2221 scenarios specifically need to work end-to-end).
 - Run relevant tests (`pytest`) after any change to `/backend/physics/`. If a physics test starts failing, treat it as a stop-everything bug, not something to patch around.
 - Keep commits scoped and descriptive — judges or teammates may look at commit history as evidence of real, incremental engineering work rather than a last-minute dump.
+- **Never push directly to `main` (or `master`).** All work must happen on a feature branch (e.g., `feature/<short-description>` or `fix/<short-description>`). Open a pull request and get it reviewed before merging. If you are about to run `git push` targeting `main`/`master`, stop and push to a feature branch instead — flag this to the human if the branch doesn't exist yet.
 
 ---
 
