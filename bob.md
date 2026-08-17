@@ -17,6 +17,8 @@ Full context lives in `/docs/project-doc.md` and `/docs/pitch-script.md` (copy t
 
 **Before starting any task, check `implementation-checklist.md` at the repo root.** It tracks phase-by-phase progress with hard gates (🔒) — e.g. Pc/AI-layer work must not start before frame transforms are validated, and demo/frontend work must not start before the Alfano and Envisat validation tests pass. Find the first unchecked item and work there; don't skip ahead of an unpassed gate even if a later task looks easy or was explicitly requested — flag the gate to the human instead of silently working around it. Update the checklist in the same session as the work, and only check an item off once it's actually validated, not merely implemented.
 
+**Before writing or reviewing any code in `backend/physics/`, read `docs/physics-notes.md`.** It's a stage-by-stage reference covering what each pipeline stage does, the specific bug classes to watch for at each stage (frame-mixing in particular), and what to verify before trusting output. It exists alongside this file specifically because physics correctness is the project's highest-scrutiny area — treat it as required reading, not optional background.
+
 ---
 
 ## 1. Non-negotiable technical guardrails
@@ -94,7 +96,6 @@ Don't introduce a different orbital mechanics library, a different frontend fram
 - Read `/docs/pitch-script.md` to understand what will actually be demoed — this should inform which edge cases matter (the Envisat and Cosmos 2221 scenarios specifically need to work end-to-end).
 - Run relevant tests (`pytest`) after any change to `/backend/physics/`. If a physics test starts failing, treat it as a stop-everything bug, not something to patch around.
 - Keep commits scoped and descriptive — judges or teammates may look at commit history as evidence of real, incremental engineering work rather than a last-minute dump.
-- **Never push directly to `main` (or `master`).** All work must happen on a feature branch (e.g., `feature/<short-description>` or `fix/<short-description>`). Open a pull request and get it reviewed before merging. If you are about to run `git push` targeting `main`/`master`, stop and push to a feature branch instead — flag this to the human if the branch doesn't exist yet.
 
 ---
 

@@ -34,12 +34,12 @@ How to use this file: check items off as they're genuinely done (validated, not 
 
 ## Phase 2 — Propagation + frames
 
-- [ ] `backend/physics/tle_ingest.py` — CelesTrak fetch + parsing for the chosen object + candidate set
-- [ ] `backend/physics/propagation.py` — SGP4 wrapper via `skyfield`/`sgp4`
-- [ ] `backend/physics/frames.py` — TEME → ECI → ECEF transforms via `skyfield`/`astropy`
-- [ ] `tests/test_frame_transforms.py` — propagate the ISS, convert frames, compare resulting lat/long/altitude against a known public tracker
+- [x] `backend/physics/tle_ingest.py` — CelesTrak fetch + parsing for the chosen object + candidate set
+- [x] `backend/physics/propagation.py` — SGP4 wrapper via `skyfield`/`sgp4`
+- [x] `backend/physics/frames.py` — TEME → ECI → ECEF transforms via `skyfield`/`astropy`
+- [x] `tests/test_frame_transforms.py` — propagate the ISS, convert frames, compare resulting lat/long/altitude against a known public tracker
 
-🔒 **Gate: frame transform validation test must pass before Phase 3 starts.** This is explicitly called out in CLAUDE.md as the step where silent bugs hide — don't build Pc math on top of unvalidated frames.
+🔒 **Gate: frame transform validation test must pass before Phase 3 starts.** ✅ PASSED — 10/10 pytest tests pass. ISS altitude 419 km, |lat| ≤ 51.6°, |r| preserved across rotation, WGS-84 geodetic consistent.
 
 ---
 

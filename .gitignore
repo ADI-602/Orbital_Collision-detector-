@@ -99,3 +99,5 @@ demo/fallback/*.mkv
 *.tmp
 *.bak
 .bob/
+temp/
+
