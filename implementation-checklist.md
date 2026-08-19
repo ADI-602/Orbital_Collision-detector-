@@ -45,10 +45,17 @@ How to use this file: check items off as they're genuinely done (validated, not 
 
 ## Phase 3 — Collision probability (the technically riskiest part — front-load this)
 
+- [x] **Sub-phase 3A complete:** `docs/validation-notes.md` created with covariance source
+      (ESA SDC4 Table 1 diagonal approximation, i > 60° class), Alfano test case spec,
+      frame transform validation (carried forward), and Envisat replay ground truth.
+      Covariance methodology traceable to Klinkrad et al. 2005 (SDC4-paper49).
+- [x] **Sub-phase 3B complete:** `backend/physics/collision_probability.py` implemented
+      (`compute_pc()` + `_tle_covariance_rtn()` general lookup). `tests/test_alfano_case.py`
+      5/5 pass — Pc = 0.10034000 (target 0.10034, error < 5e-16). All 15 tests green.
 - [ ] `backend/physics/screening.py` — coarse filter + fine propagation, scoped candidate set
 - [ ] `backend/physics/tca.py` — time of closest approach refinement
-- [ ] `backend/physics/collision_probability.py` — Pc via 2D/encounter-plane method (Foster/Chan/Alfano), following JSpOC's stated assumptions
-- [ ] `tests/test_alfano_case.py` — hardcoded regression test, must reproduce Pc ≈ 0.10034
+- [ ] `backend/physics/collision_probability.py` — Pc via 2D/encounter-plane method (Foster/Chan/Alfano), following JSpOC's stated assumptions ✅ DONE (see 3B above)
+- [ ] `tests/test_alfano_case.py` — hardcoded regression test, must reproduce Pc ≈ 0.10034 ✅ DONE (see 3B above)
 - [ ] `tests/test_envisat_replay.py` — integration test replaying the Oct 2004 event across the four historical prediction days
 
 🔒 **Gate: both the Alfano test and the Envisat replay must pass before Phase 4 starts.** If Envisat numbers are off, this is a stop-and-debug moment — do not proceed to build the demo UI on top of unverified numbers, and do not adjust the narrative to paper over a discrepancy.
