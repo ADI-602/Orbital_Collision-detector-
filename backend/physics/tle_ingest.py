@@ -188,3 +188,12 @@ def fetch_envisat(force_refresh: bool = False) -> EarthSatellite:
     Primary object for the demo conjunction scenario.
     """
     return fetch_satellite(ENVISAT_NORAD_ID, force_refresh=force_refresh)
+
+
+def parse_tle_pair(line1: str, line2: str, name: str = "SATELLITE") -> EarthSatellite:
+    """
+    Parse a pair of TLE lines into a skyfield EarthSatellite object.
+    """
+    ts = load.timescale()
+    return EarthSatellite(line1, line2, name, ts)
+
