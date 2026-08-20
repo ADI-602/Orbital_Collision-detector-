@@ -76,7 +76,7 @@ plausible judge question. The approach used in this project is documented below.
 > Klinkrad, H., Alarcon, J.R., and Sanchez, N. "Collision Avoidance for
 > Operational ESA Satellites." *Proceedings of the Fourth European Conference
 > on Space Debris*, Darmstadt, Germany, 18–20 April 2005. ESA SP-587,
-> August 2005. (SDC4-paper49)
+> August 2005. ([SDC4-paper49.pdf](references/SDC4-paper49.pdf))
 
 The paper describes how ESA's CRASS software assigns covariance to any
 TLE-catalogued object: it performs a batch least-squares orbit fit to 14
