@@ -105,16 +105,110 @@ def propagate(satellite: EarthSatellite, t: Time) -> StateVectorTEME:
 
 
 def propagate_sequence(
-    satellite: EarthSatellite, times: list[Time]
+    satellite: EarthSatellite, times: list[Time] | Time,
 ) -> list[StateVectorTEME]:
     """
-    Propagate *satellite* over a sequence of epochs.
+    Propagate *satellite* over a sequence of epochs using skyfield's
+    vectorized batch API.
+
+    Accepts either a list of scalar Time objects (backward-compatible) or a
+    single array-valued Time (preferred — avoids Python-loop overhead).
+
+    Internally converts a list of scalar Times into a single array-valued
+    Time so that skyfield calls SGP4 in one vectorized batch rather than
+    looping in Python.
 
     Args:
         satellite: a skyfield EarthSatellite object.
-        times:     list of skyfield Time objects.
+        times:     list of skyfield Time objects, or a single array-valued
+                   Time (e.g. ``ts.utc(2004, 10, 22, 0, 0, np.arange(N))``).
 
     Returns:
         List of StateVectorTEME, one per epoch, in the same order as *times*.
     """
-    return [propagate(satellite, t) for t in times]
+    from skyfield.api import load
+    from skyfield.framelib import true_equator_and_equinox_of_date as teme_frame
+
+    # --- Normalise input to a single array-valued Time ---
+    if isinstance(times, list):
+        if len(times) == 0:
+            return []
+        ts = load.timescale()
+        jd_array = np.array([t.whole for t in times])
+        fr_array = np.array([t.tai_fraction for t in times])
+        # Reconstruct an array-valued Time from the TAI Julian-date pairs.
+        t_array = ts.tai_jd(jd_array, fr_array)
+    else:
+        t_array = times  # already array-valued
+
+    # --- Batch propagation ---
+    geocentric = satellite.at(t_array)
+    pos_teme, vel_teme = geocentric.frame_xyz_and_velocity(teme_frame)
+    pos_km = np.asarray(pos_teme.km, dtype=float)      # shape (3, N)
+    vel_km_s = np.asarray(vel_teme.km_per_s, dtype=float)  # shape (3, N)
+
+    # Handle the edge case where skyfield returns 1-D (single epoch).
+    if pos_km.ndim == 1:
+        pos_km = pos_km[:, np.newaxis]
+        vel_km_s = vel_km_s[:, np.newaxis]
+
+    n = pos_km.shape[1]
+
+    # --- Wrap each epoch into a StateVectorTEME ---
+    # Build individual scalar Time objects for each state.
+    results: list[StateVectorTEME] = []
+    for i in range(n):
+        # Extract scalar Time for this index.
+        if isinstance(times, list):
+            t_i = times[i]
+        else:
+            ts_local = load.timescale()
+            t_i = ts_local.tai_jd(t_array.whole[i], t_array.tai_fraction[i])
+
+        state = StateVectorTEME(
+            epoch=t_i,
+            pos_teme_km=pos_km[:, i].copy(),
+            vel_teme_km_s=vel_km_s[:, i].copy(),
+            satellite_name=satellite.name,
+        )
+        results.append(state)
+
+    return results
+
+
+def propagate_batch_teme(
+    satellite: EarthSatellite, t_array: Time,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Propagate *satellite* over an array-valued Time and return raw numpy
+    arrays — no per-timestep dataclass wrapping.
+
+    This is the performance-critical path for screening's inner loop where
+    we need positions for many timesteps but don't need individual
+    StateVectorTEME objects.
+
+    Args:
+        satellite: a skyfield EarthSatellite object.
+        t_array:   an array-valued skyfield Time (e.g. from
+                   ``ts.utc(2004, 10, 22, 0, 0, np.arange(N))``).
+
+    Returns:
+        (pos_teme_km, vel_teme_km_s):
+            pos_teme_km:   numpy array of shape (N, 3), positions in TEME [km].
+            vel_teme_km_s: numpy array of shape (N, 3), velocities in TEME [km/s].
+    """
+    from skyfield.framelib import true_equator_and_equinox_of_date as teme_frame
+
+    geocentric = satellite.at(t_array)
+    pos_teme, vel_teme = geocentric.frame_xyz_and_velocity(teme_frame)
+
+    # skyfield returns shape (3,) for scalar or (3, N) for array —
+    # transpose to (N, 3) for natural row-per-timestep indexing.
+    pos_km = np.asarray(pos_teme.km, dtype=float)
+    vel_km_s = np.asarray(vel_teme.km_per_s, dtype=float)
+
+    if pos_km.ndim == 1:
+        # Single epoch → shape (1, 3)
+        return pos_km[np.newaxis, :], vel_km_s[np.newaxis, :]
+
+    return pos_km.T, vel_km_s.T  # (N, 3)

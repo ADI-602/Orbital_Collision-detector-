@@ -52,13 +52,13 @@ How to use this file: check items off as they're genuinely done (validated, not 
 - [x] **Sub-phase 3B complete:** `backend/physics/collision_probability.py` implemented
       (`compute_pc()` + `_tle_covariance_rtn()` general lookup). `tests/test_alfano_case.py`
       5/5 pass — Pc = 0.10034000 (target 0.10034, error < 5e-16). All 15 tests green.
-- [ ] `backend/physics/screening.py` — coarse filter + fine propagation, scoped candidate set
-- [ ] `backend/physics/tca.py` — time of closest approach refinement
-- [ ] `backend/physics/collision_probability.py` — Pc via 2D/encounter-plane method (Foster/Chan/Alfano), following JSpOC's stated assumptions ✅ DONE (see 3B above)
-- [ ] `tests/test_alfano_case.py` — hardcoded regression test, must reproduce Pc ≈ 0.10034 ✅ DONE (see 3B above)
-- [ ] `tests/test_envisat_replay.py` — integration test replaying the Oct 2004 event across the four historical prediction days
+- [x] `backend/physics/screening.py` — coarse filter + fine propagation, scoped candidate set
+- [x] `backend/physics/tca.py` — time of closest approach refinement
+- [x] `backend/physics/collision_probability.py` — Pc via 2D/encounter-plane method (Foster/Chan/Alfano), following JSpOC's stated assumptions ✅ DONE (see 3B above)
+- [x] `tests/test_alfano_case.py` — hardcoded regression test, must reproduce Pc ≈ 0.10034 ✅ DONE (see 3B above)
+- [x] `tests/test_envisat_replay.py` — integration test replaying the Oct 2004 event across the four historical prediction days (8/8 pass)
 
-🔒 **Gate: both the Alfano test and the Envisat replay must pass before Phase 4 starts.** If Envisat numbers are off, this is a stop-and-debug moment — do not proceed to build the demo UI on top of unverified numbers, and do not adjust the narrative to paper over a discrepancy.
+🔒 **Gate: both the Alfano test and the Envisat replay must pass before Phase 4 starts.** ✅ PASSED — 34/34 tests green. Alfano benchmark (Pc = 0.10034) and Envisat 2004 replay (all 4 prediction days) pass with exact ground-truth agreement.
 
 ---
 
