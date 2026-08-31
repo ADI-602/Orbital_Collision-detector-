@@ -182,6 +182,90 @@ def _passes_coarse_filter(
 # Stage 2 — Fine propagation scan
 # ---------------------------------------------------------------------------
 
+def _local_minima_indices(values: np.ndarray) -> list[int]:
+    """
+    Indices of every local minimum in a 1-D series, endpoints included.
+
+    Each one brackets a true local minimum of the underlying continuous
+    separation curve, which is why they — not just the single lowest sample —
+    are the correct candidate set for a close-approach search. A sharp
+    encounter that falls between samples still produces a dip at one of its
+    bracketing samples, even when both are far up the sides of the V.
+
+    Args:
+        values: sampled separations [km].
+
+    Returns:
+        Sorted indices of local minima.
+    """
+    n = len(values)
+    if n == 0:
+        return []
+    if n == 1:
+        return [0]
+
+    interior = np.flatnonzero(
+        (values[1:-1] <= values[:-2]) & (values[1:-1] <= values[2:])
+    ) + 1
+    indices = set(int(i) for i in interior)
+
+    # Endpoints: the minimum may lie at or beyond the window edge.
+    if values[0] <= values[1]:
+        indices.add(0)
+    if values[-1] <= values[-2]:
+        indices.add(n - 1)
+
+    return sorted(indices)
+
+
+def _fine_rescan_step_s(coarse_timestep_s: float) -> float:
+    """
+    Timestep for the local re-scan around a flagged coarse minimum.
+
+    Fine enough to rank neighbouring encounters correctly, coarse enough that
+    re-scanning several short windows stays cheap. Sub-second precision is not
+    needed here — that is Stage 5's job (tca.refine_tca), which polishes the
+    winner with a bounded numerical minimisation.
+    """
+    return float(np.clip(coarse_timestep_s / 60.0, 0.25, 2.0))
+
+
+def _scan_min_separation(
+    primary: EarthSatellite,
+    secondary: EarthSatellite,
+    tt_lo: float,
+    tt_hi: float,
+    step_s: float,
+    ts,
+) -> tuple[float, float]:
+    """
+    Minimum separation on a fine grid over [tt_lo, tt_hi].
+
+    Args:
+        primary:   primary satellite.
+        secondary: candidate object.
+        tt_lo:     window start [TT Julian date].
+        tt_hi:     window end [TT Julian date].
+        step_s:    sampling step [seconds].
+        ts:        skyfield timescale.
+
+    Returns:
+        (tt_of_minimum, min_separation_km).
+    """
+    step_days = step_s / 86400.0
+    n = max(int((tt_hi - tt_lo) / step_days) + 1, 2)
+    tt_grid = tt_lo + np.arange(n) * step_days
+    tt_grid = tt_grid[tt_grid <= tt_hi + 0.5 * step_days]
+
+    t_array = ts.tt_jd(tt_grid)
+    pos1, _ = propagate_batch_teme(primary, t_array)
+    pos2, _ = propagate_batch_teme(secondary, t_array)
+
+    seps = np.linalg.norm(pos2 - pos1, axis=1)
+    i = int(np.argmin(seps))
+    return float(tt_grid[i]), float(seps[i])
+
+
 def screen_pair(
     primary: EarthSatellite,
     secondary: EarthSatellite,
@@ -235,19 +319,87 @@ def screen_pair(
     t_array = ts.tt_jd(tt_epochs)
 
     # Batch propagate both objects — returns (N, 3) arrays in TEME.
-    pos1_teme, _ = propagate_batch_teme(primary, t_array)
-    pos2_teme, _ = propagate_batch_teme(secondary, t_array)
+    pos1_teme, vel1_teme = propagate_batch_teme(primary, t_array)
+    pos2_teme, vel2_teme = propagate_batch_teme(secondary, t_array)
 
     # Compute separation at each timestep.
     delta_r = pos2_teme - pos1_teme          # (N, 3) in TEME
     separations_km = np.linalg.norm(delta_r, axis=1)  # (N,)
 
-    min_idx = int(np.argmin(separations_km))
-    min_sep_km = float(separations_km[min_idx])
+    # Fastest relative closing speed anywhere in the window [km/s]. This bounds
+    # how much separation can change between two adjacent samples, which is
+    # what makes the de-aliasing gate below provably safe.
+    rel_speeds = np.linalg.norm(vel2_teme - vel1_teme, axis=1)
+    max_rel_speed_km_s = float(rel_speeds.max())
+
+    # ------------------------------------------------------------------
+    # De-alias the coarse grid.
+    #
+    # `argmin` over the sampled series is NOT the closest approach: a sharp
+    # encounter can pass entirely between two samples. Envisat/Zenith-2 close
+    # at ~14.8 km/s, so a 60 s step moves them ~890 km — the real 268 m event
+    # is far narrower than the sampling interval, and every sample near it
+    # lands hundreds of km up the sides of the V. A shallower pass elsewhere
+    # then wins argmin and the true conjunction is reported as GREEN.
+    #
+    # docs/physics-notes.md Stage 4 names this directly: "too coarse a
+    # timestep and you can miss a close approach that occurs between sample
+    # points. This is a correctness risk, not just a performance knob."
+    #
+    # The fix is the standard one it prescribes — coarse scan, then refine
+    # locally. Every local minimum of the sampled series brackets a true local
+    # minimum, so we examine all of them rather than only the lowest sample.
+    # ------------------------------------------------------------------
+    candidate_indices = _local_minima_indices(separations_km)
+
+    # A sampled local minimum of value m can hide a true minimum no lower than
+    # m - v_max * dt/2, since |d/dt separation| <= relative speed. Anything
+    # above this gate provably cannot dip below the threshold between samples,
+    # so discarding it is safe; anything below it must be examined.
+    alias_margin_km = max_rel_speed_km_s * timestep_s / 2.0
+    gate_km = threshold_km + alias_margin_km
+    candidate_indices = [i for i in candidate_indices if separations_km[i] < gate_km]
 
     logger.info(
-        "screen_pair: %s vs %s  min_sep=%.3f km at step %d/%d",
-        primary.name, secondary.name, min_sep_km, min_idx, n_steps,
+        "screen_pair: %s vs %s  grid_min=%.3f km  max_rel_v=%.3f km/s  "
+        "alias_margin=%.1f km  %d local minima under gate=%.1f km",
+        primary.name, secondary.name, float(separations_km.min()),
+        max_rel_speed_km_s, alias_margin_km, len(candidate_indices), gate_km,
+    )
+
+    if not candidate_indices:
+        return None
+
+    # Re-scan each surviving neighbourhood finely enough to rank them honestly.
+    # Bounds are +/- one coarse step, which is guaranteed to contain the true
+    # local minimum that the sampled minimum brackets.
+    fine_step_s = _fine_rescan_step_s(timestep_s)
+    best_tt: float | None = None
+    best_sep_km = float("inf")
+
+    for idx in candidate_indices:
+        centre_tt = float(tt_epochs[idx])
+        lo_tt = max(centre_tt - step_days, tt_start)
+        hi_tt = min(centre_tt + step_days, tt_end)
+
+        fine_tt, fine_sep_km = _scan_min_separation(
+            primary, secondary, lo_tt, hi_tt, fine_step_s, ts,
+        )
+        if fine_sep_km < best_sep_km:
+            best_sep_km = fine_sep_km
+            best_tt = fine_tt
+
+    if best_tt is None:
+        return None
+
+    min_idx = int(np.argmin(np.abs(tt_epochs - best_tt)))
+    min_sep_km = best_sep_km
+
+    logger.info(
+        "screen_pair: %s vs %s  refined min_sep=%.3f km at %s "
+        "(coarse grid reported %.3f km)",
+        primary.name, secondary.name, min_sep_km,
+        ts.tt_jd(best_tt).utc_iso(), float(separations_km.min()),
     )
 
     if min_sep_km >= threshold_km:
@@ -255,7 +407,7 @@ def screen_pair(
 
     # Build the flagged TCA window: +/-window_margin_s around min separation.
     margin_days = window_margin_s / 86400.0
-    min_tt = float(tt_epochs[min_idx])
+    min_tt = best_tt
     window_start = ts.tt_jd(max(min_tt - margin_days, tt_start))
     window_end = ts.tt_jd(min(min_tt + margin_days, tt_end))
     min_sep_time = ts.tt_jd(min_tt)

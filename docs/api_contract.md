@@ -45,7 +45,7 @@ backend\.venv\Scripts\python -m pytest tests/ -q
 Use `python -m pytest`, **not** the `pytest.exe` shim. The shim puts
 `tests/` on `sys.path` rather than the repo root, so `import backend` fails
 with `ModuleNotFoundError: No module named 'backend'`. Expected result:
-49 passed.
+56 passed.
 
 ### CORS
 
@@ -184,7 +184,8 @@ Response — captured live, Oct 22 TLE pair, `start_utc_iso`
 This is a legitimate physics result, not a fault. Render it as an empty
 state. See §4 for how to distinguish it from a routing 404.
 
-⚠️ **The search window materially changes the answer — see §5.**
+The search window is scanned de-aliased, so widening it cannot hide a
+close approach — see §5.
 
 ### 3.4 `POST /api/physics/screening` — `main.py:176-246`
 
@@ -376,39 +377,51 @@ on the `detail` string. The frontend does this in
 
 ---
 
-## 5. ⚠️ Known issue: TCA search returns a local, not global, minimum
+## 5. Close-approach search: how the window is scanned
 
-**Status: open. Affects `/api/physics/tca` and `/api/physics/screening`.**
+**This section previously recorded an open bug. It is fixed; kept here because
+the failure mode is instructive and the guarantee below is worth relying on.**
 
-Over a wide search window these endpoints return the **first** close approach
-that clears the threshold, not the closest one in the window. For the Envisat
-demo pair this means a wide window misses the actual event:
+Screening samples separation on a fixed grid (default 60 s) and then refines.
+Naively taking the lowest sample is wrong: Envisat and the Zenith-2 fragment
+close at ~14.8 km/s, so one 60 s step moves them ~890 km. A 268 m encounter is
+far narrower than the sampling interval — every sample near it lands hundreds
+of km up the sides of the V, while a shallower pass elsewhere samples lower and
+wins `argmin`.
 
-| `start_utc_iso` | `search_duration_hours` | Returned TCA | Miss distance |
-|---|---|---|---|
-| `2004-10-22T04:00:00Z` | 2 | `05:10:37Z` | **268.2 m** ✅ the real event |
-| `2004-10-22T05:00:00Z` | 1 | `05:10:37Z` | **268.2 m** ✅ |
-| `2004-10-22T00:00:00Z` | 6 | `03:30:01Z` | 16 009 m ❌ |
-| `2004-10-22T00:00:00Z` | 12 | `03:30:01Z` | 16 009 m ❌ |
+That is what used to happen. Over `2004-10-22T00:00:00Z` + 12 h the search
+returned 16 km at 03:30 and reported the flagship conjunction as `pc: 0`,
+`threat_level: "GREEN"`.
 
-With the wide window, `/api/physics/screening` therefore reports
-`pc: 0` and `threat_level: "GREEN"` for the headline conjunction.
+**What it does now** (`backend/physics/screening.py`):
 
-**Why the test suite does not catch it.**
-`tests/test_api_endpoints.py` only asserts `miss_distance_m > 0.0`, and
-`tests/test_envisat_replay.py:144-152` builds its window **centered on the
-already-known TCA** (`tca_tt ± window_days`, `threshold_km=100.0`) — so the
-validated replay never exercises the wide-window path the API uses. All 49
-tests pass regardless.
+1. Coarse scan at `timestep_s`, as before.
+2. Take **every local minimum** of the sampled series, not just the lowest —
+   each one brackets a true local minimum of the continuous curve.
+3. Discard only those that provably cannot dip below the threshold between
+   samples. Since `|d/dt separation| <= relative speed`, a sampled minimum of
+   value `m` can hide a true minimum no lower than `m - v_max·Δt/2`, so the
+   gate is `threshold_km + v_max·Δt/2`. Anything above it is safe to drop;
+   anything below it is examined.
+4. Re-scan each survivor finely over ±1 coarse step and keep the best.
+5. `tca.refine_tca()` polishes the winner to sub-second precision.
 
-**Consequences for callers.** Until this is fixed, any client that needs the
-real Envisat numbers must pass a narrow window bracketing the known TCA.
-A UI that screens over a naive multi-hour window will show the flagship
-conjunction as GREEN / no risk.
+**The guarantee:** no close approach below the threshold can be missed because
+of sampling, for any timestep, given the relative-speed bound. The timestep is
+a performance knob again, not a correctness one.
 
-This is recorded rather than worked around, per `CLAUDE.md` §1.2: *"If your
-numbers are wildly off, that's a bug — do not adjust the demo narrative to
-hide it; fix the pipeline or surface the discrepancy."*
+Verified over a 12 h window at the default 60 s timestep:
+
+| Prediction day | TCA found | Miss distance | Pc | Published |
+|---|---|---|---|---|
+| Oct 21 (T-1d) | `2004-10-22T05:10:37Z` | 151.8 m | 1.93e-3 | 151.5 m, 0.001930 |
+| Oct 22 (T-0d) | `2004-10-22T05:10:37Z` | 268.9 m | 6.59e-4 | 268.0 m, 0.000659 |
+
+Regression coverage is `tests/test_tca_global_minimum.py`, which asserts the
+answer does not depend on window framing or timestep. The pre-existing suite
+could not catch this: `test_api_endpoints.py` only asserts
+`miss_distance_m > 0.0`, and `test_envisat_replay.py` centres its window on the
+already-known TCA, so neither ever asks the search to *find* anything.
 
 ---
 

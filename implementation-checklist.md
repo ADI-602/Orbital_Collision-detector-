@@ -121,24 +121,24 @@ How to use this file: check items off as they're genuinely done (validated, not 
 
 🔒 **Gate: full Envisat demo flow must run start-to-finish without manual intervention before Phase 6 starts.**
 
-> ⚠️ **BLOCKER found during step 1 — must be resolved before the "Envisat replay
-> wired end-to-end" item above can pass.** `/api/physics/tca` and
-> `/api/physics/screening` return the **first** close approach clearing the
-> threshold, not the closest one in the window. Over a realistic multi-hour
-> window the Envisat pair yields 16 009 m at `03:30:01Z` instead of the real
-> **268 m at `05:10:37Z`** — so screening reports `pc: 0`, `threat_level:
-> "GREEN"` for the flagship conjunction. A narrow window bracketing the known
-> TCA returns the correct 268 m.
+> ✅ **RESOLVED (2026-08-31).** The close-approach search returned the lowest
+> *sampled* point rather than the true minimum, so a wide window missed the
+> Envisat encounter entirely (16 km at 03:30 instead of 268 m at 05:10) and
+> screening reported it as `pc: 0`, GREEN. Cause was timestep aliasing: at
+> ~14.8 km/s relative speed a 60 s step moves the pair ~890 km, so the
+> encounter fell between samples.
 >
-> The existing suite does not catch this: `tests/test_api_endpoints.py` only
-> asserts `miss_distance_m > 0.0`, and `tests/test_envisat_replay.py:144-152`
-> centres its window on the already-known TCA, so the wide-window path the API
-> actually uses is never exercised. All 49 tests pass regardless.
+> `backend/physics/screening.py` now evaluates every local minimum of the
+> sampled series, keeps those that could hide a sub-threshold approach
+> (`threshold + v_max·Δt/2`, which is provably safe given `|d/dt sep| <=
+> relative speed`), re-scans each finely, and refines the winner. The timestep
+> is a performance knob again, not a correctness one.
 >
-> This is a physics-pipeline bug, surfaced rather than worked around per
-> CLAUDE.md §1.2. Full reproduction table in `docs/api_contract.md` §5. Fixing
-> it means making the TCA search return the global minimum across the window
-> (and adding a regression test that would have caught it).
+> Verified through the general wide-window path against published values:
+> Oct 21 → 151.8 m / Pc 1.93e-3 (published 151.5 m / 0.001930); Oct 22 →
+> 268.9 m / Pc 6.59e-4 (published 268.0 m / 0.000659). Regression coverage:
+> `tests/test_tca_global_minimum.py` (7 tests, asserting the answer is
+> independent of window framing and timestep). Full suite 56/56.
 
 ---
 
