@@ -12,6 +12,17 @@ Nothing here changes backend code; this doc is the frontend build plan only.
 
 ## 1. Overview & goals
 
+> **Framing correction (2026-08-31).** The paragraph below, and several later
+> sections, read as though stepping through the Envisat event were the
+> product's core loop. It is not. **The system is general-purpose**: it detects
+> close approaches between *any two tracked objects*, computes Pc, and
+> recommends a maneuver. Envisat is one **proof of correctness** — a real 2004
+> conjunction whose published numbers the pipeline reproduces — shown in its
+> own dedicated view and framed as validation. Manually injected close-approach
+> cases play the same role for detection. Build every conjunction surface to
+> take an arbitrary object pair; never hardcode a scenario.
+
+
 Build a React + CesiumJS console that visualizes conjunction risk (satellite
 close-approach events), lets a user step through the historical Envisat vs.
 Zenith-2 debris event of October 2004, and surfaces AI-generated plain-English
@@ -30,14 +41,11 @@ than silently presenting rule-based text as if it were live AI output.
 
 ## 2. Known discrepancies (read this before wiring anything)
 
-1. **`docs/api_contract.md` is stale.** It was an earlier/aspirational design
-   doc. None of its 5 documented endpoints match what's actually implemented
-   in `backend/api/main.py` — different paths, different HTTP methods
-   (GET-with-query-params vs. POST-with-body), and different request/response
-   shapes. **Build against the real routes in §3 below, not that doc.**
-   Updating `api_contract.md` to match reality is out of scope for this plan
-   — track it as a separate follow-up task so it doesn't silently drift
-   further.
+1. ~~**`docs/api_contract.md` is stale.**~~ **RESOLVED (Phase 5 step 1).**
+   `docs/api_contract.md` has been rewritten from `backend/api/main.py` and
+   verified against commit `bfe5bd4`. All response examples in it are now
+   captured from a live server rather than invented. It is again a usable
+   source of truth; re-verify it whenever a route changes.
 2. **AI provider mismatch.** `CLAUDE.md`, `backend/README.md`, and
    `.env.example` all reference `ANTHROPIC_API_KEY` (Claude), but the actual
    code in `backend/ai/advisor.py` calls **Google Gemini**
@@ -62,8 +70,8 @@ Confirmed from `backend/api/main.py` and `backend/ai/schema.py`:
 | Path | Method | Purpose | Notes |
 |---|---|---|---|
 | `/health` | GET | health check | poll once on app load |
-| `/api/conjunctions/envisat` | GET | Envisat/Zenith-2 replay ground truth | returns raw TLE pairs for 4 prediction days (Oct 19–22, 2004) |
-| `/api/physics/tca` | POST | TCA + miss distance from two raw TLEs | body: `{tle1_line1, tle1_line2, tle2_line1, tle2_line2}` (confirm exact field names against `main.py`/OpenAPI schema when implementing) |
+| `/api/conjunctions/envisat` | GET | Envisat/Zenith-2 replay ground truth | returns raw TLE pairs for 4 prediction days (Oct 19–22, 2004). **TLEs only — no miss distance, no Pc**, despite the endpoint docstring |
+| `/api/physics/tca` | POST | TCA + miss distance from two raw TLEs | body: `{primary: {name, line1, line2}, secondary: {name, line1, line2}, start_utc_iso, search_duration_hours}` — **corrected**; the earlier `{tle1_line1, ...}` shape in this table was wrong |
 | `/api/physics/screening` | POST | screen candidate TLEs vs. primary | returns Pc/miss-distance/threat-level per candidate |
 | `/api/physics/maneuver` | POST | simulate a delta-V burn | returns pre/post Pc, fuel used, post-burn miss distance |
 | `/api/ai/advise` | POST | AI decision support (Gemini, degrades to rule-based fallback) | body: `ConjunctionContext` + `ManeuverOption[]`; response: `AIAdvisorResponse` (`executive_summary`, `risk_assessment`, `recommended_action`, `tradeoff_analysis`, `key_metrics`, `is_fallback`) |
@@ -125,6 +133,11 @@ Think of this as one app shell with view states, not separate routed pages
    - **Scenario control**: explicit "Play Envisat Scenario" / "Play Cosmos
      2221" driver that steps the T-minus countdown day by day — this is the
      primary demo action, must be easy to find and trigger
+2b. **Envisat replay** (own view, reached from the top bar) — the correctness
+   proof: "here is a real conjunction from October 2004; watch the pipeline
+   reproduce the published numbers." Deliberately separate from the live
+   console, which is general-purpose. A disabled placeholder tab for this
+   already exists in `StatusHeader.jsx`.
 3. **Maneuver Simulation** (modal/slide-over, not a separate page) — delta-v
    slider + burn direction toggle, live-updating before/after Pc and miss
    distance, wired to `/api/physics/maneuver`
@@ -196,9 +209,9 @@ frontend/src/
 
 Maps to `implementation-checklist.md` Phase 5 items — work top to bottom:
 
-1. API client (`frontend/src/api/`) + env setup + `/health` smoke test
-2. Console shell + design-system components (`GlassPanel`, `RiskBadge`,
-   `StatusHeader`)
+1. ~~API client (`frontend/src/api/`) + env setup + `/health` smoke test~~ ✅ **DONE**
+2. ~~Console shell + design-system components (`GlassPanel`, `RiskBadge`,
+   `StatusHeader`)~~ ✅ **DONE**
 3. Cesium globe rendering static/replay TLE positions
 4. Event list + event detail wired to screening/TCA endpoints
 5. T-minus countdown + "Play Envisat Scenario" driver
@@ -229,12 +242,22 @@ without manual intervention before calling Phase 5 done.
 
 ## 10. Open items for the team
 
-- [ ] Decide whether `docs/api_contract.md` gets rewritten to match the real
-      backend routes (separate follow-up task, not blocking frontend work)
-- [ ] Confirm exact request field names for `/api/physics/tca` and
-      `/api/physics/maneuver` against the live Swagger UI
-      (`http://localhost:8000/docs`) before writing the API client
-- [ ] Confirm Cosmos 2221 TLE fixture location/name in `tests/fixtures`
-- [ ] Decide on state management approach (React Context, as sketched above,
-      vs. a lightweight external store) once the console's shared-state
-      surface area is clearer
+- [x] ~~Decide whether `docs/api_contract.md` gets rewritten~~ — **done in
+      step 1**: rewritten from source, verified against commit `bfe5bd4`.
+- [x] ~~Confirm exact request field names for `/api/physics/tca` and
+      `/api/physics/maneuver`~~ — **done in step 1**; both are documented in
+      `docs/api_contract.md` §3.3 and §3.5 and implemented in
+      `frontend/src/api/physics.js`.
+- [ ] ⚠️ **Source** a Cosmos 2221 TLE pair. This item previously assumed a
+      fixture existed to be located; it does not. `tests/fixtures/` contains
+      only `alfano_case.py` and `envisat_tles.py`, and every other
+      `cosmos`/`2221` hit in the repo is prose or a bare display string. This
+      needs a CelesTrak/Space-Track fetch plus a validation pass before step 8.
+- [x] ~~Decide on state management approach~~ — **decided in step 1**: no
+      library and no Context for now. The only shared state is health status,
+      polled once in `Console` and passed down as a prop. When `EventList`
+      lands in step 4, add `state/selectedEventContext.jsx` (provider only)
+      and `hooks/useSelectedEvent.js` (hook only) as **two** files — oxlint's
+      `react/only-export-components` warns when a provider and its hook share
+      a module. Still no external store: Zustand/Jotai/TanStack Query are
+      pitch-relevant dependency decisions per CLAUDE.md, not incidental ones.
