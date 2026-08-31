@@ -77,13 +77,68 @@ How to use this file: check items off as they're genuinely done (validated, not 
 
 ## Phase 5 — Frontend + integration
 
-- [ ] Dashboard skeleton wired to backend API
-- [ ] 3D globe rendering live TLE data for the chosen object + candidate set
+> **Framing correction (recorded 2026-08-31).** This phase was originally
+> written as though the Envisat/Zenith-2 replay were *the* product. It is not.
+> The system is general-purpose: it detects close approaches between **any two
+> tracked objects**, computes Pc, and recommends a maneuver. Envisat is one
+> **proof of correctness** — a real 2004 conjunction whose published numbers we
+> can reproduce — and manually injected cases serve the same role for
+> detection. Build the console as a general tracking/detection tool; give the
+> Envisat replay its own dedicated view framed as validation. The items below
+> still use the older Envisat-centric wording in places; read them through this
+> correction.
+
+
+- [x] Dashboard skeleton wired to backend API — `frontend/src/api/` client
+      (typed error classes, per-endpoint AbortController timeouts, adapters for
+      the physics→AI field/unit drift) + 34/34 vitest unit tests green +
+      `npm run check:api` live probe (verified in both directions: exit 0
+      against a running backend, exit 1 with an actionable hint when stopped).
+      Console shell renders real ONLINE/OFFLINE state from `GET /health`,
+      confirmed in a headless-Chrome render against the live API. **No physics
+      numbers are rendered yet** — every other panel is an explicitly labelled
+      pending region. Also rewrote `docs/api_contract.md` from source (it had
+      documented five endpoints that never existed, with fabricated physics
+      numbers in its examples).
+- [x] 3D globe rendering live TLE data — Cesium globe (freely rotatable), real
+      TLEs fetched from CelesTrak's `stations` group and propagated client-side
+      with `satellite.js` (SGP4). Click-to-select shows a real object's live
+      lat/lon/altitude. Simulated clock runs at x120 with the multiplier shown
+      on screen, so motion is visible without being presented as real-time.
+      Verified in headless Chrome over CDP: 21 objects tracked, ISS at ~420 km.
+      **Resilient to the feed being down:** tries a localStorage cache (6 h TTL,
+      so reloads don't re-hit CelesTrak), then a live fetch, then a committed
+      snapshot of real TLEs. The UI always states which of the three is in use
+      — `live` / `cached` / `snapshot` — and shows the failure reason when
+      degraded. Refresh the snapshot with `npm run refresh:tle`.
+      **Scope caveat:** the original wording "for the chosen object + candidate
+      set" assumed the Envisat pair; what ships is a general live-tracking set,
+      which matches the system's actual purpose (see the note below). Works with
+      no Cesium Ion token via the bundled Natural Earth II imagery fallback.
 - [ ] T-minus countdown UI component
 - [ ] Envisat replay wired end-to-end (globe + countdown + Pc trend + AI recommendation, all live from real pipeline output)
 - [ ] Cosmos 2221 wired as secondary/backup scenario
 
 🔒 **Gate: full Envisat demo flow must run start-to-finish without manual intervention before Phase 6 starts.**
+
+> ⚠️ **BLOCKER found during step 1 — must be resolved before the "Envisat replay
+> wired end-to-end" item above can pass.** `/api/physics/tca` and
+> `/api/physics/screening` return the **first** close approach clearing the
+> threshold, not the closest one in the window. Over a realistic multi-hour
+> window the Envisat pair yields 16 009 m at `03:30:01Z` instead of the real
+> **268 m at `05:10:37Z`** — so screening reports `pc: 0`, `threat_level:
+> "GREEN"` for the flagship conjunction. A narrow window bracketing the known
+> TCA returns the correct 268 m.
+>
+> The existing suite does not catch this: `tests/test_api_endpoints.py` only
+> asserts `miss_distance_m > 0.0`, and `tests/test_envisat_replay.py:144-152`
+> centres its window on the already-known TCA, so the wide-window path the API
+> actually uses is never exercised. All 49 tests pass regardless.
+>
+> This is a physics-pipeline bug, surfaced rather than worked around per
+> CLAUDE.md §1.2. Full reproduction table in `docs/api_contract.md` §5. Fixing
+> it means making the TCA search return the global minimum across the window
+> (and adding a regression test that would have caught it).
 
 ---
 
