@@ -1,0 +1,177 @@
+.console {
+  display: grid;
+  grid-template-columns: 260px 1fr 320px;
+  grid-template-rows: auto auto 1fr auto;
+  grid-template-areas:
+    'header header header'
+    'banner banner banner'
+    'left   stage  right'
+    'strip  strip  strip';
+  gap: var(--space-3);
+  height: 100%;
+  min-height: 0;
+  padding: var(--space-3);
+}
+
+.console__header { grid-area: header; }
+.console__banner { grid-area: banner; }
+.console__rail-left { grid-area: left; }
+.console__stage { grid-area: stage; }
+.console__rail-right { grid-area: right; }
+.console__strip { grid-area: strip; }
+
+.console__rail-left,
+.console__rail-right {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  overflow: auto;
+}
+
+.console__card {
+  flex: none;
+}
+
+.console__stage {
+  min-height: 0;
+  display: flex;
+}
+
+.console__card--stage {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+/* HUD overlaid on the globe canvas rather than docked beside it — the globe
+   is the hero, and chrome floats over it. */
+.console__stage-hud {
+  position: absolute;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: rgba(5, 5, 5, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.console__hud-clock {
+  font-size: var(--fs-caption);
+}
+
+.console__hud-speed {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.console__feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.console__feed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.console__feed-key {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+}
+
+.console__feed-val {
+  font-size: var(--fs-caption);
+}
+
+.console__strip-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.console__pills {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.console__strip-pending {
+  min-width: 200px;
+}
+
+.console__strip-pending .pending-region {
+  min-height: 0;
+  padding: 0;
+}
+
+.console__banner code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* Primary target is a 1920x1080 projector; this is the graceful fallback. */
+@media (max-width: 1280px) {
+  .console {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    grid-template-areas:
+      'header'
+      'banner'
+      'stage'
+      'left'
+      'right'
+      'strip';
+  }
+
+  .console__stage { min-height: 380px; }
+
+  .console__rail-left,
+  .console__rail-right {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .console__rail-left > *,
+  .console__rail-right > * {
+    flex: 1 0 260px;
+  }
+
+  .console__strip-inner {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+}
+
+/* Degraded-feed notice sits under the feed rows, not instead of them: the
+   provenance and the reason should be readable together. */
+.console__feed-degraded {
+  margin-top: var(--space-3);
+}
+
+.console__feed-degraded .error-state {
+  padding: var(--space-3);
+}
+
+.console__feed-degraded .error-state__detail {
+  font-size: 11px;
+}

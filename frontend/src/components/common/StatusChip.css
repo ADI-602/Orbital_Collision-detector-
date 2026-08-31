@@ -1,0 +1,64 @@
+/* Deliberately distinct from RiskBadge: this reports SYSTEM state (is a
+   service reachable), never conjunction threat. Conflating "the AI is up"
+   with "collision risk is green" is exactly the physics/AI blur the project
+   rules forbid, so the two never share a component or a colour token. */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--card-border);
+  background: rgba(255, 255, 255, 0.03);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.status-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.status-chip__label {
+  color: var(--text-dim);
+}
+
+.status-chip__value {
+  color: var(--text-primary);
+}
+
+.status-chip--online {
+  color: var(--risk-nominal);
+  border-color: var(--risk-nominal);
+  background: var(--risk-nominal-soft);
+}
+
+.status-chip--offline {
+  color: var(--risk-critical);
+  border-color: var(--risk-critical);
+  background: var(--risk-critical-soft);
+}
+
+.status-chip--pending {
+  color: var(--text-dim);
+}
+
+.status-chip--pending .status-chip__dot {
+  animation: status-chip-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes status-chip-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-chip--pending .status-chip__dot {
+    animation: none;
+  }
+}

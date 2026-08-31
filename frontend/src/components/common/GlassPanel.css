@@ -1,0 +1,50 @@
+/* Soft, near-borderless card. The hairline is deliberately almost
+   subliminal: hard visible box edges are the main thing that made the
+   previous iteration read as unfinished. */
+.glass-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--card-fill);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  backdrop-filter: blur(var(--card-blur));
+  -webkit-backdrop-filter: blur(var(--card-blur));
+  overflow: hidden;
+}
+
+/* Without blur support a low-opacity fill is barely readable on a projector,
+   so fall back to a near-solid surface. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-panel {
+    background: var(--card-fill-solid);
+  }
+}
+
+/* No divider rule under the header — spacing separates it, not a line. */
+.glass-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-2);
+}
+
+.glass-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.glass-panel__body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-2) var(--space-4) var(--space-4);
+  overflow: auto;
+}
+
+/* Panels that hold a full-bleed canvas (the globe) opt out of body padding. */
+.glass-panel--bleed .glass-panel__body {
+  padding: 0;
+  position: relative;
+}
