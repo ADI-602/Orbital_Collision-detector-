@@ -257,7 +257,9 @@ Maps to `implementation-checklist.md` Phase 5 items — work top to bottom:
    is wired to `GET /api/monitoring/events` instead of running its own
    screening. See §13.
 6. AI assistant panel wired to `/api/ai/advise`, with fallback-mode badge
-7. Maneuver simulation modal wired to `/api/physics/maneuver`
+7. ~~Maneuver simulation modal wired to `/api/physics/maneuver`~~ ✅ **DONE** —
+   `ManeuverPanel`, on the replay view and the live console. Not a modal: see
+   §15 for why the encounter needed its own always-visible scale.
 8. Cosmos 2221 wired as secondary scenario
 9. Empty/loading/error states + polish pass
 
@@ -607,5 +609,81 @@ party.
 | Deselect | both rings and the chord removed ✅ |
 | Plain object selection | one accent-teal ring ✅ |
 | Injected 2004 event on the live console | no rings — `hasGlobePresence` correctly gates it ✅ |
+| Browser console | no errors or exceptions ✅ |
+
+---
+
+## 15. Step 7 — the avoidance burn, drawn at a scale where it is visible
+
+`/api/physics/maneuver` now returns `tracks`: the primary's coasting arc, its
+post-burn arc, and the secondary, sampled in ECEF from one TCA solution and one
+Clohessy-Wiltshire displacement. CLAUDE.md §5.2 requires that to come from the
+backend — reconstructing a manoeuvred orbit in JavaScript would be orbital
+mechanics outside the validated pipeline, and two lines computed by two
+different codebases would not be comparable to each other.
+
+### The measurement that decided the design
+
+Re-flying the real October 2004 burn: **268.9 m → 569.8 m**, Pc **6.59e-4 →
+5.69e-5** (91.4% reduction), 0.152 kg of hydrazine. The two trajectories
+separate by **389 m at TCA across a 29,425 km arc — about 1:55,000**.
+
+At globe scale those two lines are the same line, by a wide margin. Drawing
+them in two colours and calling §5.1.4 satisfied would have shown a judge
+nothing. The burn's effect lives at the encounter, so the encounter is drawn:
+
+- **Globe** — both arcs, unflown in the event's risk colour, flown in the
+  accent. Context: which stretch of orbit runs from the burn to the encounter.
+- **`ManeuverPanel`** — the three TCA positions projected into their own plane,
+  to scale, with a labelled scale bar.
+
+The projection is an **isometry** on those three points, so every distance
+drawn is the true distance: no foreshortening, nothing scaled up to look more
+dramatic. A unit test asserts it against the 3D separations. The labelled
+numbers still come from the pipeline's scalars — the drawing is a picture, the
+miss distance is a number, and they are never presented as the same kind of
+thing.
+
+### Two honest limits, both surfaced rather than tuned away
+
+**The sampled arcs cannot resolve the miss distance.** They span an hour at a
+~16 s step while the objects close at ~15 km/s, so the nearest sampled approach
+is 7.9 km against a true 268 m, and it moves with the grid. Resolving 268 m
+uniformly would need a millisecond step across the whole hour. The encounter is
+therefore carried separately as three exact TCA positions, and a pytest
+asserts the gap between arcs and truth *exists*, so nobody later files down a
+display grid until it looks like a measurement.
+
+**The globe arcs needed reframing to sit on the orbit rings.** Rings are drawn
+inertially (one instant's GMST for every sample); the backend's arcs are
+Earth-fixed per sample, which is a ground-track swath. `alignTrackToInstant`
+undoes each sample's own rotation and reapplies one shared instant's, through
+satellite.js calls only. Without it the burn arc visibly wanders off the ring
+it is a piece of.
+
+### Placement
+
+The panel lives on the **Envisat replay first**: that view runs a 2004 clock, so
+the returned trajectories can be drawn against the objects they belong to. It
+replaced the "Maneuver simulation" `PendingRegion` there. On the live console it
+sits at the end of the bottom strip, and the globe arcs are drawn only for a
+LIVE event — the injected 2004 case is excluded for the same reason its objects
+are not highlighted there.
+
+Burns are simulated **on explicit action**, never on selection: a console that
+quietly plans a manoeuvre for every row a user clicks is both wasteful and
+misleading. A pair the pipeline declined to assess, or a co-orbital pair, is
+refused with a reason rather than sent to the endpoint to fail.
+
+**Verification (2026-09-08), headless Chrome over CDP against a live backend.**
+
+| Check | Result |
+|---|---|
+| Idle state | "Nothing is simulated until you ask" ✅ |
+| −4.0 cm/s (the burn ESA flew) | `269 m → 570 m`, `6.59e-4 → 5.69e-5`, 91.4%, 0.152 kg ✅ |
+| −8.0 cm/s re-simulates | `269 m → 938 m`, `1.60e-6`, 99.8%, 0.304 kg ✅ |
+| Diagram to scale | 570 m line measures 2.13× the 269 m line; true ratio 2.12 ✅ |
+| Scale bar | 100 m, labelled beneath the bar it measures ✅ |
+| Globe arcs | flown arc present in accent along the risk-coloured ring (124 accent pixels across the orbit's span, checked in the capture) ✅ |
 | Browser console | no errors or exceptions ✅ |
 

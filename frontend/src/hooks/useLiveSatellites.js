@@ -137,7 +137,8 @@ function recordsFromText(text) {
  *   cachedAt: number | null,
  *   refresh: () => void,
  *   propagateAll: (when: Date) => LiveSatellite[],
- *   orbitTrackFor: (id: string, when: Date) => Array<{x: number, y: number, z: number}> | null
+ *   orbitTrackFor: (id: string, when: Date) => Array<{x: number, y: number, z: number}> | null,
+ *   tleFor: (id: string) => {name: string, line1: string, line2: string} | null
  * }}
  */
 export function useLiveSatellites() {
@@ -264,6 +265,15 @@ export function useLiveSatellites() {
     return out
   }
 
+  /** Look up a tracked record by id, rebuilding the index only when it moves. */
+  const recordById = (id) => {
+    const current = recordsRef.current
+    if (byIdRef.current.source !== current) {
+      byIdRef.current = { source: current, map: new Map(current.map((r) => [r.id, r])) }
+    }
+    return byIdRef.current.map.get(id) ?? null
+  }
+
   /**
    * One revolution of an object's orbit, in the Earth-fixed frame, for the
    * instant the globe is drawing.
@@ -277,13 +287,25 @@ export function useLiveSatellites() {
    * @returns {Array<{x: number, y: number, z: number}>|null} km, ECEF
    */
   const orbitTrackFor = (id, when) => {
-    const records_ = recordsRef.current
-    if (byIdRef.current.source !== records_) {
-      byIdRef.current = { source: records_, map: new Map(records_.map((r) => [r.id, r])) }
-    }
-    const rec = byIdRef.current.map.get(id)
-    if (!rec) return null
-    return orbitTrackEcef(rec.satrec, when)
+    const rec = recordById(id)
+    return rec ? orbitTrackEcef(rec.satrec, when) : null
+  }
+
+  /**
+   * The raw element set for a tracked object, in the shape the physics
+   * endpoints take.
+   *
+   * Forwarding SOURCE data is not a breach of the boundary note above: a TLE
+   * is catalogue input, not a number this hook computed. What must never
+   * happen is a POSITION from here reaching the pipeline.
+   *
+   * @param {string} id
+   * @returns {{name: string, line1: string, line2: string}|null}
+   */
+  const tleFor = (id) => {
+    const rec = recordById(id)
+    if (!rec?.line1 || !rec?.line2) return null
+    return { name: rec.name, line1: rec.line1, line2: rec.line2 }
   }
 
   return {
@@ -299,5 +321,6 @@ export function useLiveSatellites() {
     refresh,
     propagateAll,
     orbitTrackFor,
+    tleFor,
   }
 }

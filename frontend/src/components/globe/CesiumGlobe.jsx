@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as Cesium from 'cesium'
 
+import { alignTrackToInstant } from '../../lib/maneuver.js'
 import { markerImage, markerPixelSize } from '../../lib/markerImage.js'
 import { OBJECT_KIND } from '../../lib/objectType.js'
 import { computeSimTime, DEFAULT_SPEED_MULTIPLIER } from '../../lib/simClock.js'
@@ -35,6 +36,11 @@ import './CesiumGlobe.css'
  *   being drawn — see lib/orbitTrack.js. Supplied by whichever hook owns the
  *   element sets. Rings are drawn for the highlighted pair and, failing that,
  *   the selected object; null means that object gets no ring.
+ * @param {{tracks: object, colorHex: string} | null} [props.maneuverOverlay]
+ *   the flown and unflown arcs for a simulated burn, straight from
+ *   /api/physics/maneuver. Drawn for context — at orbit scale the two arcs are
+ *   the same line, and the burn's actual effect is shown to scale in
+ *   ManeuverPanel. See lib/maneuver.js.
  * @param {((elapsedRealMs: number) => Date) | null} [props.simTimeFor]
  *   overrides which instant is drawn. The live console leaves this null and
  *   gets a clock that starts now and runs forward at `speedMultiplier`; the
@@ -91,6 +97,7 @@ function CesiumGlobe({
   selectedId = null,
   highlightPair = null,
   orbitTrackFor = null,
+  maneuverOverlay = null,
   simTimeFor = null,
   clockKey = 'live',
   telemetryIntervalMs = 250,
@@ -115,6 +122,8 @@ function CesiumGlobe({
   highlightRef.current = highlightPair
   const orbitTrackForRef = useRef(orbitTrackFor)
   orbitTrackForRef.current = orbitTrackFor
+  const maneuverRef = useRef(maneuverOverlay)
+  maneuverRef.current = maneuverOverlay
   const simTimeForRef = useRef(simTimeFor)
   simTimeForRef.current = simTimeFor
   const telemetryIntervalRef = useRef(telemetryIntervalMs)
@@ -266,6 +275,51 @@ function CesiumGlobe({
       return wanted
     }
 
+    /**
+     * The flown and unflown arcs of a simulated burn.
+     *
+     * Both are drawn, and at this scale they are the SAME LINE: the burn moves
+     * the trajectory a few hundred metres across an arc tens of thousands of
+     * kilometres long. That is not a rendering failure, it is the physics, and
+     * ManeuverPanel draws the encounter to scale where the difference is
+     * actually visible. What the globe adds is context — which stretch of the
+     * orbit runs from the burn to the encounter.
+     *
+     * The unflown arc keeps the event's risk colour, because it is still the
+     * trajectory that carries the risk. The flown one is drawn in the accent:
+     * a planned burn is a proposed action, which is chrome, not a threat level
+     * (styles/tokens.css forbids mixing the two systems).
+     *
+     * Returns Cartesian3 arrays keyed like the orbit rings, so one upsert loop
+     * serves both.
+     */
+    const wantedManeuverArcs = (simTime) => {
+      const overlay = maneuverRef.current
+      const tracks = overlay?.tracks
+      const times = tracks?.sample_utc_iso
+      if (!tracks || !Array.isArray(times) || times.length < 2) return new Map()
+
+      const toCartesians = (rows) => {
+        const aligned = alignTrackToInstant(rows, times, simTime)
+        if (!aligned) return null
+        return aligned.map((p) => new Cesium.Cartesian3(p.x * 1000, p.y * 1000, p.z * 1000))
+      }
+
+      const pre = toCartesians(tracks.pre_burn_pos_ecef_km)
+      const post = toCartesians(tracks.post_burn_pos_ecef_km)
+      if (!pre || !post) return new Map()
+
+      const arcs = new Map()
+      // Drawn first and wider, so the flown arc reads as sitting inside it.
+      arcs.set('maneuver:pre', {
+        colorHex: overlay.colorHex, dashed: false, width: 5, positions: pre,
+      })
+      arcs.set('maneuver:post', {
+        colorHex: MARKER_SELECTED_HEX, dashed: false, width: 2, positions: post,
+      })
+      return arcs
+    }
+
     const removeTrack = (viewer, id) => {
       const track = trackEntitiesRef.current.get(id)
       if (!track) return
@@ -291,24 +345,34 @@ function CesiumGlobe({
      */
     const syncOrbitTracks = (viewer, simTime) => {
       const wanted = wantedTracks()
+      for (const [key, arc] of wantedManeuverArcs(simTime)) wanted.set(key, arc)
+
       const tracks = trackEntitiesRef.current
       const sampler = orbitTrackForRef.current
 
       for (const [id, style] of wanted) {
-        const points = sampler?.(id, simTime)
-        if (!points || points.length < 2) {
+        // A maneuver arc arrives with its geometry already built; an orbit ring
+        // is sampled here from the object's own element set.
+        let positions = style.positions
+        if (!positions) {
+          const points = sampler?.(id, simTime)
+          if (!points || points.length < 2) {
+            removeTrack(viewer, id)
+            continue
+          }
+          // km from the physics-facing modules, metres for Cesium. Named
+          // explicitly because a silent factor of 1000 here would draw a ring
+          // inside the planet.
+          positions = points.map(
+            (p) => new Cesium.Cartesian3(p.x * 1000, p.y * 1000, p.z * 1000),
+          )
+        }
+        if (positions.length < 2) {
           removeTrack(viewer, id)
           continue
         }
 
-        // km from the physics-facing module, metres for Cesium. Named
-        // explicitly because a silent factor of 1000 here would draw a ring
-        // inside the planet.
-        const positions = points.map(
-          (p) => new Cesium.Cartesian3(p.x * 1000, p.y * 1000, p.z * 1000),
-        )
-
-        const styleKey = `${style.colorHex}|${style.dashed}`
+        const styleKey = `${style.colorHex}|${style.dashed}|${style.width ?? 1.8}`
         let track = tracks.get(id)
         if (track && track.styleKey !== styleKey) {
           // Solid and dashed are different material types, so a style change
@@ -337,7 +401,7 @@ function CesiumGlobe({
           id: `orbit-track:${id}`,
           polyline: {
             positions: new Cesium.CallbackProperty(() => holder.points, false),
-            width: 1.8,
+            width: style.width ?? 1.8,
             material,
             // Half of any orbit is behind the Earth. Without a depth-fail
             // material that half simply vanishes and the ring reads as an arc.

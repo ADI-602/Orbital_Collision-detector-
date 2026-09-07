@@ -4,15 +4,16 @@ import { API_BASE_URL } from '../api/client.js'
 import ErrorState from '../components/common/ErrorState.jsx'
 import GaugeCard from '../components/common/GaugeCard.jsx'
 import GlassPanel from '../components/common/GlassPanel.jsx'
-import PendingRegion from '../components/common/PendingRegion.jsx'
 import PillStat from '../components/common/PillStat.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AssetStrip from '../components/panels/AssetStrip.jsx'
 import EventDetail from '../components/panels/EventDetail.jsx'
+import ManeuverPanel from '../components/panels/ManeuverPanel.jsx'
 import SelectedObjectPanel from '../components/panels/SelectedObjectPanel.jsx'
 import StatusHeader from '../components/panels/StatusHeader.jsx'
 import { useHealth } from '../hooks/useHealth.js'
 import { useLiveSatellites } from '../hooks/useLiveSatellites.js'
+import { useManeuver } from '../hooks/useManeuver.js'
 import { useScreening } from '../hooks/useScreening.js'
 import { eventKey, hasGlobePresence, riskColorHex } from '../lib/conjunctions.js'
 import { DEFAULT_SPEED_MULTIPLIER, formatSimClock } from '../lib/simClock.js'
@@ -138,6 +139,7 @@ function Console({ view, onChangeView }) {
     refresh: refreshTle,
     propagateAll,
     orbitTrackFor,
+    tleFor,
   } = useLiveSatellites()
 
   const [telemetry, setTelemetry] = useState({ simTime: null, satellites: [] })
@@ -163,6 +165,10 @@ function Console({ view, onChangeView }) {
     [screening.events, selectedEventKey],
   )
 
+  // The avoidance burn for whatever is selected. Runs only when asked; see
+  // useManeuver for why a console must not quietly plan one per click.
+  const maneuver = useManeuver(selectedEvent, tleFor)
+
   // Only a live event has two real markers on this globe to connect — the
   // injected 2004 Envisat replay does not (see hasGlobePresence()).
   const highlightPair = useMemo(() => {
@@ -173,6 +179,21 @@ function Console({ view, onChangeView }) {
       colorHex: riskColorHex(selectedEvent),
     }
   }, [selectedEvent])
+
+  /**
+   * Burn arcs on the globe, for a LIVE event only.
+   *
+   * The injected 2004 case is excluded for the same reason its objects are not
+   * highlighted: those trajectories belong to October 2004, and this globe is
+   * running today's clock. Drawing them here would put a 2004 arc among
+   * today's objects. The Envisat replay view has a 2004 clock and draws them
+   * there instead.
+   */
+  const maneuverOverlay = useMemo(() => {
+    if (!hasGlobePresence(selectedEvent)) return null
+    const tracks = maneuver.result?.tracks
+    return tracks ? { tracks, colorHex: riskColorHex(selectedEvent) } : null
+  }, [selectedEvent, maneuver.result])
 
   const tracked = telemetry.satellites.length
 
@@ -277,6 +298,7 @@ function Console({ view, onChangeView }) {
             selectedId={selectedId}
             highlightPair={highlightPair}
             orbitTrackFor={orbitTrackFor}
+            maneuverOverlay={maneuverOverlay}
           />
           <div className="console__stage-hud">
             <span className="console__hud-label ui-label">Sim time</span>
@@ -333,11 +355,9 @@ function Console({ view, onChangeView }) {
               />
             </div>
 
-            <div className="console__strip-pending">
-              <PendingRegion
-                region="Maneuver planning"
-                awaiting="Delta-V simulation and AI recommendation arrive with detection."
-              />
+            <div className="console__strip-maneuver">
+              <span className="ui-label console__strip-title">Maneuver planning</span>
+              <ManeuverPanel event={selectedEvent} maneuver={maneuver} />
             </div>
           </div>
         </GlassPanel>

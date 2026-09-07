@@ -110,13 +110,19 @@
   gap: var(--space-2);
 }
 
-.console__strip-pending {
-  min-width: 200px;
+/* The maneuver planner sits at the end of the bottom strip. It needs more room
+   than the pending placeholder it replaced: the encounter diagram is drawn to
+   scale and stops being readable if squeezed. */
+.console__strip-maneuver {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 280px;
+  max-width: 340px;
 }
 
-.console__strip-pending .pending-region {
-  min-height: 0;
-  padding: 0;
+.console__strip-title {
+  display: block;
 }
 
 .console__banner code {

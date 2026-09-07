@@ -8,10 +8,12 @@ import PendingRegion from '../components/common/PendingRegion.jsx'
 import RiskBadge from '../components/common/RiskBadge.jsx'
 import TMinus from '../components/common/TMinus.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
+import ManeuverPanel from '../components/panels/ManeuverPanel.jsx'
 import PredictionTable from '../components/panels/PredictionTable.jsx'
 import StatusHeader from '../components/panels/StatusHeader.jsx'
 import { useEnvisatReplay } from '../hooks/useEnvisatReplay.js'
 import { useHealth } from '../hooks/useHealth.js'
+import { useManeuver } from '../hooks/useManeuver.js'
 import {
   formatMissDistance,
   formatPc,
@@ -61,6 +63,11 @@ function Replay({ view, onChangeView }) {
   const [telemetry, setTelemetry] = useState({ simTime: null, satellites: [] })
   const [paused, setPaused] = useState(false)
 
+  // The avoidance burn ESA actually flew, re-run through the pipeline. This
+  // view is the right home for it: the globe here runs a 2004 clock, so the
+  // returned trajectories can be drawn against the objects they belong to.
+  const maneuver = useManeuver(headline, null)
+
   // The replay clock accumulates only while playing, so pause freezes the
   // globe and the countdown together instead of letting one run on.
   const pausedRef = useRef(false)
@@ -98,6 +105,13 @@ function Replay({ view, onChangeView }) {
     secondaryId: replay.secondaryId,
     colorHex: riskColorHex(headline),
   }
+
+  // Context only. At orbit scale the flown and unflown arcs are the same line —
+  // a few hundred metres across tens of thousands of kilometres — which is why
+  // the panel draws the encounter to scale instead.
+  const maneuverOverlay = maneuver.result?.tracks
+    ? { tracks: maneuver.result.tracks, colorHex: riskColorHex(headline) }
+    : null
 
   return (
     <div className="replay">
@@ -172,14 +186,10 @@ function Replay({ view, onChangeView }) {
               approach.
             </p>
             <p className="replay__case-note">
-              This is history, quoted from the paper — not something this app
-              computed. Reproducing the burn through{' '}
-              <code>/api/physics/maneuver</code> is the next build step.
+              The paragraph above is history, quoted from the paper. Everything
+              below it is this pipeline re-flying that burn.
             </p>
-            <PendingRegion
-              region="Maneuver simulation"
-              awaiting="Re-flying this burn through the pipeline, and comparing pre- and post-burn probability, arrives with the maneuver step."
-            />
+            <ManeuverPanel event={headline} maneuver={maneuver} />
           </div>
         </GlassPanel>
       </div>
@@ -193,6 +203,7 @@ function Replay({ view, onChangeView }) {
             onTelemetry={handleTelemetry}
             highlightPair={highlightPair}
             orbitTrackFor={replay.orbitTrackFor}
+            maneuverOverlay={maneuverOverlay}
             simTimeFor={simTimeFor}
             clockKey={tcaMs}
             telemetryIntervalMs={100}

@@ -174,6 +174,37 @@ four co-located station modules whose rings coincide.
       propagations every 250 ms; three at once is ~1,500/s, which should be
       nothing — but nothing here has been measured on real hardware with a GPU.
 
+# 3d. Maneuver planning (NEW — 2026-09-08)
+
+The burn is simulated on the replay view (left rail, under "What ESA did") and
+on the live console (end of the bottom strip). The replay is the one I could
+verify properly; the live-console path needs a real conjunction, which the
+offline tracked set cannot produce.
+
+- [ ] **Nothing runs until you press a ΔV.** The panel should say so. A console
+      that plans a burn for every row you click is both wasteful and misleading.
+- [ ] **−4.0 cm/s on the replay reproduces the historical manoeuvre:**
+      `269 m → 570 m`, Pc `6.59e-4 → 5.69e-5`, **91.4%** reduction, **0.152 kg**
+      of propellant. This is the burn ESA actually flew on 22 October 2004.
+- [ ] **−8.0 cm/s gives a bigger miss and a smaller Pc** (`938 m`, `1.60e-6`,
+      99.8%, 0.304 kg). If a larger burn ever made things worse, stop and tell me.
+- [ ] **The diagram is to scale.** Hold something against the screen: the teal
+      "after burn" line must be about 2.1× the red "no burn" line, matching
+      570/269. The scale bar under it says what 100 m looks like. *This is the
+      one claim on the panel a judge can check by eye — it must survive that.*
+- [ ] **The numbers beside the diagram are the pipeline's, not measurements off
+      the picture.** The panel says so; confirm the wording is still there.
+- [ ] **On the globe, the burn arc is drawn in teal along the red orbit ring.**
+      The two arcs coincide at that scale — that is the physics, not a bug: 389 m
+      across a 29,425 km arc. The panel is where the difference is visible.
+- [ ] **Live console: select a co-orbital or unassessable pair.** The panel must
+      refuse with a reason rather than offering a burn. *Never tested with a
+      real assessable live conjunction* — the offline set has none.
+- [ ] **Live console: the injected 2004 event draws no burn arcs on the globe**
+      (its trajectories are from 2004; the globe is on today's clock). The
+      replay view is where those are drawn.
+- [ ] **Browser console clean** (F12).
+
 # 4. Envisat replay — I verified these, re-confirm by eye
 
 - [ ] Tab switches, four prediction rows populate: **329 / 234 / 152 / 269 m**

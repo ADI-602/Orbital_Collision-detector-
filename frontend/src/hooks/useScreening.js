@@ -130,6 +130,13 @@ async function runValidationScreening(signal) {
     ...e,
     origin: EVENT_ORIGIN.VALIDATION,
     primary_name: result.primary_name,
+    /**
+     * The archived element sets this event was screened from, carried so a
+     * maneuver can be simulated against the same inputs. A live event gets
+     * its TLEs from the tracked set instead (useLiveSatellites tleFor); this
+     * object is not in the tracked set, so it has to bring its own.
+     */
+    tle_pair: { primary: day.envisat_tle, secondary: day.secondary_tle },
     /** Shown beside the computed values so the reproduction is checkable. */
     provenance: {
       label: 'Envisat vs. Zenith-2 debris — 22 Oct 2004',

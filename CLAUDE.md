@@ -213,8 +213,7 @@ would look identical on stage and collapse under one judge's question.
    and produces conjunctions with real objects. Now validates and raises
    `InvalidTLEError`. This mattered more once we ingest hundreds of TLEs.
    **DONE.**
-4. Maneuver endpoint does not return trajectories (see §5.2).
-   **BACKEND DONE, DRAWING OPEN.** `/api/physics/maneuver` now returns
+4. ~~Maneuver endpoint does not return trajectories (see §5.2).~~ **DONE.** `/api/physics/maneuver` now returns
    `tracks`: the primary's coasting arc, its post-burn arc, and the secondary,
    sampled in ECEF from one TCA solution and one Clohessy-Wiltshire
    displacement — so a drawn line cannot contradict a reported number. The two
@@ -230,6 +229,20 @@ would look identical on stage and collapse under one judge's question.
    it (7.9 km sampled against a true 268 m at a ~16 s step and 15 km/s), which
    is why the exact TCA positions are carried separately and why a miss
    distance must never be measured off the arcs.
+
+   So it is drawn twice. The globe carries both arcs — unflown in the event's
+   risk colour, flown in the accent, since a planned burn is a proposed action
+   and not a threat level — which shows WHERE the burn and the encounter sit in
+   the orbit. `ManeuverPanel` then draws the encounter itself to scale, with a
+   labelled scale bar: the three TCA positions projected into their own plane,
+   which is an isometry, so every distance on the diagram is the true distance
+   and nothing is exaggerated to look more dramatic. The labelled numbers still
+   come from the pipeline's scalars, never measured off the picture.
+
+   It lives on the Envisat replay first, because that view runs a 2004 clock
+   and can draw 2004 trajectories against the objects they belong to. On the
+   live console the arcs are drawn only for a LIVE event, for the same reason
+   the injected case is not highlighted there.
 5. ~~Orbit tracks are not rendered at all yet — only point markers.~~ **DONE.**
    Selecting an event draws one revolution of each object's orbit
    (`frontend/src/lib/orbitTrack.js`), in the event's risk colour, primary

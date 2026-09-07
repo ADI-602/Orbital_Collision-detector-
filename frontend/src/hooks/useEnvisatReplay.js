@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CanceledError } from '../api/client.js'
 import { getEnvisatReplay } from '../api/conjunctions.js'
 import { screenCandidates } from '../api/physics.js'
+import { EVENT_ORIGIN } from '../lib/conjunctions.js'
 import { buildSatrec, propagateToGeodetic } from '../lib/geodetic.js'
 import { orbitTrackEcef } from '../lib/orbitTrack.js'
 import {
@@ -73,7 +74,20 @@ async function screenDay(day, signal) {
       // event it would mean the pipeline stopped detecting a conjunction it
       // is known to detect, so it is surfaced as its own state rather than
       // rendered as a blank row.
-      event: event ? { ...event, primary_name: result.primary_name } : null,
+      event: event
+        ? {
+          ...event,
+          primary_name: result.primary_name,
+          origin: EVENT_ORIGIN.VALIDATION,
+          /**
+           * The archived element sets this day was screened from, carried so
+           * the avoidance burn can be re-flown against the same inputs. These
+           * objects are not in today's tracked set, so the event has to bring
+           * its own TLEs (see useManeuver.elementSetsFor).
+           */
+          tle_pair: { primary: day.envisat_tle, secondary: day.secondary_tle },
+        }
+        : null,
       error: null,
     }
   } catch (err) {
