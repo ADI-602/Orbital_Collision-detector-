@@ -1,0 +1,184 @@
+.event-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.event-detail--empty {
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+
+.event-detail__empty-title {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.event-detail__empty-hint {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.event-detail__head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.event-detail__pair {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+}
+
+.event-detail__primary { color: var(--text-secondary); }
+.event-detail__arrow { color: var(--text-faint); }
+.event-detail__secondary { color: var(--text-primary); }
+
+.event-detail__provenance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--risk-watch);
+  border-radius: 0 var(--radius-inner) var(--radius-inner) 0;
+  background: var(--risk-watch-soft);
+}
+
+.event-detail__provenance-title { color: var(--risk-watch); }
+
+.event-detail__provenance-body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.event-detail__headline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.event-detail__headline-value {
+  font-size: var(--fs-num-lg);
+  line-height: 1.1;
+}
+
+.event-detail__headline-na {
+  font-family: var(--font-sans);
+  font-size: var(--fs-title);
+  color: var(--text-dim);
+}
+
+.event-detail__co-orbital {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.event-detail__co-orbital-note {
+  color: var(--text-faint);
+}
+
+/* The backend's own words, quoted rather than paraphrased. */
+.event-detail__reason {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  padding: var(--space-2);
+  border-radius: var(--radius-inner);
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--text-secondary);
+}
+
+.event-detail__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.event-detail__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.event-detail__key {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+}
+
+.event-detail__val {
+  font-size: var(--fs-caption);
+  text-align: right;
+}
+
+.event-detail__source {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.event-detail__globe-note {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* Route to the replay rather than a countdown, for a historical event. */
+.event-detail__replay-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.event-detail__replay-note {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.event-detail__replay-button {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.event-detail__replay-button:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.event-detail__replay-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

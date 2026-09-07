@@ -1,0 +1,27 @@
+.t-minus {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.t-minus__value {
+  font-size: var(--fs-num-lg);
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+}
+
+.t-minus__note {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* Proximity, not threat — see the component docblock. The accent is UI
+   chrome, so a running countdown uses text colours and only the last ten
+   minutes borrows the elevated risk hue, where "closing fast" is the meaning
+   rather than a verdict. */
+.t-minus--nominal .t-minus__value { color: var(--text-primary); }
+.t-minus--imminent .t-minus__value { color: var(--risk-elevated); }
+.t-minus--past .t-minus__value { color: var(--text-dim); }
+.t-minus--unknown .t-minus__value { color: var(--text-faint); }

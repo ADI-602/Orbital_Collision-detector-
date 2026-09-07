@@ -8,26 +8,39 @@ import PendingRegion from '../components/common/PendingRegion.jsx'
 import PillStat from '../components/common/PillStat.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AssetStrip from '../components/panels/AssetStrip.jsx'
+import EventDetail from '../components/panels/EventDetail.jsx'
 import SelectedObjectPanel from '../components/panels/SelectedObjectPanel.jsx'
 import StatusHeader from '../components/panels/StatusHeader.jsx'
 import { useHealth } from '../hooks/useHealth.js'
 import { useLiveSatellites } from '../hooks/useLiveSatellites.js'
+import { useScreening } from '../hooks/useScreening.js'
+import { eventKey, hasGlobePresence, riskColorHex } from '../lib/conjunctions.js'
 import { DEFAULT_SPEED_MULTIPLIER, formatSimClock } from '../lib/simClock.js'
 import './Console.css'
 
 const UVICORN_COMMAND = 'backend\\.venv\\Scripts\\uvicorn backend.api.main:app --reload --port 8000'
 
-/** Gauge scale for the tracked-object count — a display ceiling, not a limit. */
-const TRACKING_GAUGE_MAX = 12
+/**
+ * The tracking ring shows COVERAGE, not a count against a ceiling.
+ *
+ * It used to scale the object count against a fixed max of 12, which was
+ * readable for a ~20-object station set and meaningless once the tracked set
+ * became several hundred debris fragments: the ring simply pinned full and
+ * said nothing. It now reads propagatable objects against objects offered, so
+ * a full ring means every element set the server supplied was usable and any
+ * shortfall is visible rather than buried in a rejected-list.
+ */
 
 /**
- * How each data source is named in the UI. Nothing but a genuine live fetch
- * is allowed to read as "CelesTrak (live)" — see the source-honesty contract
- * in useLiveSatellites.js.
+ * How each data source is named in the UI. Nothing but a genuine live fetch is
+ * allowed to read as live — see the source-honesty contract in
+ * useLiveSatellites.js.
  */
 const SOURCE_LABEL = {
-  live: 'CelesTrak (live)',
-  cached: 'CelesTrak (cached)',
+  live: 'Server (live feed)',
+  cached: 'Server (cached feed)',
+  bundled: 'Server (offline set)',
+  replay: 'Local replay — backend down',
   snapshot: 'Bundled snapshot',
 }
 
@@ -41,17 +54,32 @@ function describeAge(ms) {
 }
 
 /**
- * The gauge footnote states where the numbers came from. It must never
- * assert "live" for data that is cached or bundled.
+ * The gauge footnote states where the numbers came from. It must never assert
+ * "live" for data that is cached or bundled.
+ *
+ * The snapshot case carries an extra warning, because it is the one state
+ * where the globe and the event list describe DIFFERENT object sets: the
+ * server screens its tracked groups, while the bundled fallback is a small
+ * stations set. Markers would then exist that no event can ever point at, and
+ * that has to be said rather than left to be discovered on stage.
  */
 function sourceFootnote({ loading, source, snapshotEpoch, cachedAt }) {
-  if (loading) return 'Contacting CelesTrak…'
-  if (source === 'live') return 'Live from CelesTrak, propagated on-device'
+  if (loading) return 'Loading the tracked set from the server…'
+  if (source === 'live') return 'Live catalogue from the server, propagated on-device'
   if (source === 'cached') {
-    return `Cached CelesTrak data (fetched ${describeAge(cachedAt)}), propagated on-device`
+    return `Server's cached catalogue (fetched ${describeAge(cachedAt)}), propagated on-device`
+  }
+  if (source === 'bundled') {
+    // Old, but still the set the server screens — so unlike the browser-side
+    // snapshot below, events and markers DO correspond. Say which of the two
+    // this is, because the consequences differ.
+    return `Server's committed offline set (captured ${describeAge(cachedAt)}) — live feed unreachable, but this IS the set being screened`
+  }
+  if (source === 'replay') {
+    return `Backend unreachable — replaying the last set this browser received (${describeAge(cachedAt)})`
   }
   if (source === 'snapshot') {
-    return `Bundled snapshot from ${snapshotEpoch} — live feed unreachable`
+    return `Bundled snapshot from ${snapshotEpoch} — NOT the set the server screens, so events will not match these markers`
   }
   return 'No tracking data'
 }
@@ -91,37 +119,67 @@ function ClockIcon() {
  * The globe drives its own animation loop and reports back on a throttle via
  * `onTelemetry` — that is why satellite positions live in React state here
  * but are updated a few times a second rather than every frame.
+ *
+ * @param {object} props
+ * @param {'console'|'replay'} props.view      which tab is active, for the header
+ * @param {(view: string) => void} props.onChangeView
  */
-function Console() {
+function Console({ view, onChangeView }) {
   const health = useHealth()
   const {
     count,
     loading,
     error: tleError,
     source,
+    serverGroups,
+    rejected,
     snapshotEpoch,
     cachedAt,
     refresh: refreshTle,
     propagateAll,
+    orbitTrackFor,
   } = useLiveSatellites()
 
   const [telemetry, setTelemetry] = useState({ simTime: null, satellites: [] })
   const [selectedId, setSelectedId] = useState(null)
+  const [selectedEventKey, setSelectedEventKey] = useState(null)
+
+  // Reads the server's scheduled screening pass. The browser sends no TLEs and
+  // runs no screening of its own — one set, screened in one place
+  // (backend/api/monitoring.py).
+  const screening = useScreening()
 
   const handleTelemetry = useCallback((next) => setTelemetry(next), [])
   const handleSelect = useCallback((id) => setSelectedId(id), [])
+  const handleSelectEvent = useCallback((key) => setSelectedEventKey(key), [])
 
   const selected = useMemo(
     () => telemetry.satellites.find((s) => s.id === selectedId) ?? null,
     [telemetry.satellites, selectedId],
   )
 
+  const selectedEvent = useMemo(
+    () => screening.events.find((e) => eventKey(e) === selectedEventKey) ?? null,
+    [screening.events, selectedEventKey],
+  )
+
+  // Only a live event has two real markers on this globe to connect — the
+  // injected 2004 Envisat replay does not (see hasGlobePresence()).
+  const highlightPair = useMemo(() => {
+    if (!hasGlobePresence(selectedEvent)) return null
+    return {
+      primaryId: selectedEvent.primary_id,
+      secondaryId: selectedEvent.secondary_id,
+      colorHex: riskColorHex(selectedEvent),
+    }
+  }, [selectedEvent])
+
   const tracked = telemetry.satellites.length
 
   return (
     <div className="console">
       <div className="console__header">
-        <StatusHeader health={health} />
+        <StatusHeader health={health} view={view} onChangeView={onChangeView} />
       </div>
 
       {health.status === 'offline' && (
@@ -147,11 +205,11 @@ function Console() {
         <GlassPanel className="console__card">
           <GaugeCard
             label="Tracking status"
-            value={tracked}
-            max={TRACKING_GAUGE_MAX}
-            display={String(tracked)}
-            unit="objects"
-            tone={source === 'snapshot' ? 'watch' : 'accent'}
+            value={count}
+            max={count + rejected.length}
+            display={String(count)}
+            unit={rejected.length ? `of ${count + rejected.length} objects` : 'objects'}
+            tone={source === 'snapshot' || source === 'replay' ? 'watch' : 'accent'}
             footnote={sourceFootnote({ loading, source, snapshotEpoch, cachedAt })}
           />
         </GlassPanel>
@@ -163,8 +221,10 @@ function Console() {
               <span className="console__feed-val ui-readout">{SOURCE_LABEL[source] ?? '—'}</span>
             </div>
             <div className="console__feed-row">
-              <span className="console__feed-key">Group</span>
-              <span className="console__feed-val ui-readout">stations</span>
+              <span className="console__feed-key">Groups</span>
+              <span className="console__feed-val ui-readout" title={serverGroups.join(', ')}>
+                {serverGroups.length ? serverGroups.join(', ') : '—'}
+              </span>
             </div>
             <div className="console__feed-row">
               <span className="console__feed-key">Propagator</span>
@@ -174,13 +234,32 @@ function Console() {
 
           {/* The live feed being down is a normal, survivable state — but it
               must be stated, never hidden behind still-moving satellites. */}
-          {source === 'snapshot' && (
+          {(source === 'snapshot' || source === 'replay') && (
             <div className="console__feed-degraded">
               <ErrorState
-                title="Live feed unavailable"
-                detail={tleError?.message ?? 'CelesTrak unreachable'}
-                hint={`Showing a bundled snapshot of real TLEs captured ${snapshotEpoch}. Positions drift as that epoch ages, so treat them as approximate.`}
+                title="Backend tracked set unavailable"
+                detail={tleError?.message ?? 'the server did not answer'}
+                hint={
+                  source === 'replay'
+                    ? 'Replaying the last set this browser received from the server. The objects are the ones the server was screening, but positions drift as the element sets age.'
+                    : `Showing a bundled snapshot of real TLEs captured ${snapshotEpoch}. This is NOT the set the server screens — conjunction events will refer to objects that are not on this globe.`
+                }
                 onRetry={refreshTle}
+              />
+            </div>
+          )}
+
+          {/* Element sets that would not parse never reached the pipeline, so
+              they cannot appear as "no conjunction found". Name them. */}
+          {rejected.length > 0 && (
+            <div className="console__feed-degraded">
+              <ErrorState
+                title={`${rejected.length} element set${rejected.length === 1 ? '' : 's'} rejected`}
+                detail={rejected
+                  .slice(0, 3)
+                  .map((r) => `${r.name}: ${r.reason}`)
+                  .join('\n')}
+                hint="These objects are not tracked and are not screened. They are listed here rather than silently dropped, so the object count is not mistaken for full coverage."
               />
             </div>
           )}
@@ -196,6 +275,8 @@ function Console() {
             onTelemetry={handleTelemetry}
             onSelect={handleSelect}
             selectedId={selectedId}
+            highlightPair={highlightPair}
+            orbitTrackFor={orbitTrackFor}
           />
           <div className="console__stage-hud">
             <span className="console__hud-label ui-label">Sim time</span>
@@ -216,12 +297,9 @@ function Console() {
         </GlassPanel>
 
         <GlassPanel title="Conjunction risk" className="console__card">
-          <GaugeCard
-            label=""
-            value={null}
-            tone="critical"
-            unit="Pc"
-            footnote="No conjunction assessed. Screening between tracked objects is not wired up yet."
+          <EventDetail
+            event={selectedEvent}
+            onOpenReplay={onChangeView ? () => onChangeView('replay') : undefined}
           />
         </GlassPanel>
       </div>
@@ -234,6 +312,9 @@ function Console() {
               satellites={telemetry.satellites}
               selectedId={selectedId}
               onSelect={handleSelect}
+              screening={screening}
+              selectedEventKey={selectedEventKey}
+              onSelectEvent={handleSelectEvent}
             />
 
             <div className="console__pills">

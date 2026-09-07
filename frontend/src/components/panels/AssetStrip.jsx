@@ -1,24 +1,36 @@
 import { useState } from 'react'
 
-import PendingRegion from '../common/PendingRegion.jsx'
+import EventList from './EventList.jsx'
 import './AssetStrip.css'
 
 /**
  * Bottom strip: a local tab switch between the objects currently being
  * tracked and the conjunction events detected between them.
  *
- * The two tabs are deliberately in different states of completeness, and the
- * UI says so plainly. "Tracked Objects" is real, live data. "Conjunction
- * Events" has no detection wired yet, so it renders an empty state rather
- * than sample rows — placeholder conjunctions would be indistinguishable
- * from real pipeline output on a projector.
+ * Both tabs now carry real data, from two different places. "Tracked objects"
+ * is client-side SGP4 ephemeris for the globe. "Conjunction events" is output
+ * of the validated Python pipeline. They are never mixed: no number from the
+ * globe's propagation appears in an event row.
+ *
+ * This component owns no conjunction logic — it hands `screening` straight to
+ * EventList, which is presentational over lib/conjunctions.js.
  *
  * @param {object} props
  * @param {Array<object>} props.satellites propagated LiveSatellite list
  * @param {string|null} props.selectedId
  * @param {(id: string) => void} props.onSelect
+ * @param {object} props.screening        useScreening() state + actions
+ * @param {string|null} props.selectedEventKey
+ * @param {(key: string|null) => void} props.onSelectEvent
  */
-function AssetStrip({ satellites, selectedId, onSelect }) {
+function AssetStrip({
+  satellites,
+  selectedId,
+  onSelect,
+  screening,
+  selectedEventKey,
+  onSelectEvent,
+}) {
   const [tab, setTab] = useState('objects')
 
   return (
@@ -42,6 +54,9 @@ function AssetStrip({ satellites, selectedId, onSelect }) {
           onClick={() => setTab('events')}
         >
           Conjunction events
+          {screening.status === 'ready' && (
+            <span className="asset-strip__count">{screening.events.length}</span>
+          )}
         </button>
       </div>
 
@@ -69,9 +84,18 @@ function AssetStrip({ satellites, selectedId, onSelect }) {
           )}
         </div>
       ) : (
-        <PendingRegion
-          region="No detection run yet"
-          awaiting="Conjunction screening across the tracked set is not wired up yet."
+        <EventList
+          events={screening.events}
+          status={screening.status}
+          pass={screening.pass}
+          liveError={screening.liveError}
+          validationError={screening.validationError}
+          triggering={screening.triggering}
+          watchingPass={screening.watchingPass}
+          selectedKey={selectedEventKey}
+          onSelect={onSelectEvent}
+          onRefresh={screening.refresh}
+          onScreenNow={screening.screenNow}
         />
       )}
     </div>
