@@ -115,8 +115,30 @@ How to use this file: check items off as they're genuinely done (validated, not 
       set" assumed the Envisat pair; what ships is a general live-tracking set,
       which matches the system's actual purpose (see the note below). Works with
       no Cesium Ion token via the bundled Natural Earth II imagery fallback.
-- [ ] T-minus countdown UI component
+- [x] T-minus countdown UI component — `frontend/src/components/common/TMinus.jsx`,
+      driven by pure arithmetic in `frontend/src/lib/replay.js` (32 unit tests).
+      Two clocks, because a countdown is only meaningful against a clock that
+      can reach the target: real UTC for a live event, and the replay's own
+      2004 clock for the historical one. An unknown or malformed TCA renders
+      an em dash rather than falling back to `Date.now()`, which would produce
+      a confident countdown to the wrong moment. **Verified in headless
+      Chrome:** counts down at ×60 (`T-00:53:53` → `T-00:51:52` over 2 s),
+      freezes with the globe on pause, and returns to the window start on
+      restart.
 - [ ] Envisat replay wired end-to-end (globe + countdown + Pc trend + AI recommendation, all live from real pipeline output)
+      — **3 of 4 parts done.** The `Envisat replay` tab is a live view
+      (`frontend/src/pages/Replay.jsx`): both objects propagated onto their own
+      globe on a looping clock around the real TCA, the countdown above, and
+      all four archived prediction days re-run through
+      `/api/physics/screening`, reproducing 329 / 234 / 152 / 269 m and Pc
+      2.74e-4 / 1.11e-3 / 1.93e-3 / 6.59e-4 — agreeing with
+      `docs/validation-notes.md` §4.4 to under a metre. **Not ticked because
+      the AI recommendation is not wired** (build-order step 6); its panel is
+      an explicitly labelled pending region. Note also that the "Pc trend"
+      wording anticipated a converging estimate — the four days do not
+      converge monotonically, so they are presented as four independent
+      predictions that agree, which is the paper's own framing. See
+      `docs/frontend-implementation-plan.md` §12.
 - [ ] Cosmos 2221 wired as secondary/backup scenario
 
 🔒 **Gate: full Envisat demo flow must run start-to-finish without manual intervention before Phase 6 starts.**

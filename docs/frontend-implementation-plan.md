@@ -61,6 +61,32 @@ than silently presenting rule-based text as if it were live AI output.
    either — source its TLE pair from `tests/fixtures` (confirm exact fixture
    name when implementing) and drive it through the same physics endpoints.
 
+   **Resolved in step 4 for the live path:** candidate TLEs come from the
+   client's own CelesTrak feed. `useLiveSatellites` now keeps each record's raw
+   `line1`/`line2` and `useScreening` posts them to `/api/physics/screening`,
+   which re-propagates them with the validated Python `sgp4`. Only the raw
+   element sets cross — never a position satellite.js computed.
+
+4. ~~⚠️ **One unusable pair fails the whole screening batch.**~~ **RESOLVED,
+   and then made moot.** The backend now isolates per-candidate failures
+   (`backend/api/assessment.py`), and the frontend no longer runs screening at
+   all — it reads the scheduled server-side pass. See §13. The historical note
+   below is kept because it explains why `useScreening.js` looked the way it
+   did.
+
+   ⚠️ **One unusable pair fails the whole screening batch.**
+   `compute_pc` raises on a stationary pair
+   (`backend/physics/collision_probability.py:234`) and the route turns any
+   exception into a 500 for the entire request
+   (`backend/api/main.py:241-246`). Since the live tracked set is CelesTrak's
+   `stations` group — where ISS, POISK and NAUKA share element sets — the
+   batch form returns 500 every time and no candidate is ever assessed.
+   Step 4 works around this in the frontend by screening **one candidate per
+   request** (`useScreening.js`), which costs the backend the same total work
+   and turns a refused pair into one labelled row. **The backend-side fix —
+   skipping an unusable candidate instead of failing the batch — is still
+   open**, and is worth doing before the candidate set grows.
+
 ---
 
 ## 3. Real backend routes (source of truth)
@@ -212,9 +238,24 @@ Maps to `implementation-checklist.md` Phase 5 items — work top to bottom:
 1. ~~API client (`frontend/src/api/`) + env setup + `/health` smoke test~~ ✅ **DONE**
 2. ~~Console shell + design-system components (`GlassPanel`, `RiskBadge`,
    `StatusHeader`)~~ ✅ **DONE**
-3. Cesium globe rendering static/replay TLE positions
-4. Event list + event detail wired to screening/TCA endpoints
-5. T-minus countdown + "Play Envisat Scenario" driver
+3. ~~Cesium globe rendering static/replay TLE positions~~ ✅ **DONE** — the
+   globe carries the live tracked set and the 2004 replay, and selecting an
+   event now draws both objects' orbit tracks (§5.3 blocker 5). See §14.
+4. ~~Event list + event detail wired to screening/TCA endpoints~~ ✅ **DONE** —
+   `EventList` (in the bottom strip's "Conjunction events" tab) and
+   `EventDetail` (right rail) render real `/api/physics/screening` output.
+   Ranking, co-orbital classification and formatting live in
+   `frontend/src/lib/conjunctions.js` (25 unit tests); `useScreening.js` drives
+   the calls. Verified in headless Chrome against a live backend — see §11.
+5. ~~T-minus countdown + "Play Envisat Scenario" driver~~ ✅ **DONE** — the
+   `Envisat replay` tab is live. `TMinus` (shared: sim-clock mode on the
+   replay, wall-clock mode on a live event in `EventDetail`), a looping 2004
+   replay clock with play/pause/restart, and all four prediction days re-run
+   through `/api/physics/screening`. Clock arithmetic and the published ground
+   truth live in `frontend/src/lib/replay.js` (32 unit tests). See §12.
+5b. ~~Event list reads the scheduled screening pass~~ ✅ **DONE** — the panel
+   is wired to `GET /api/monitoring/events` instead of running its own
+   screening. See §13.
 6. AI assistant panel wired to `/api/ai/advise`, with fallback-mode badge
 7. Maneuver simulation modal wired to `/api/physics/maneuver`
 8. Cosmos 2221 wired as secondary scenario
@@ -248,6 +289,13 @@ without manual intervention before calling Phase 5 done.
       `/api/physics/maneuver`~~ — **done in step 1**; both are documented in
       `docs/api_contract.md` §3.3 and §3.5 and implemented in
       `frontend/src/api/physics.js`.
+- [x] ~~Decide how conjunction state is shared~~ — **step 4 deviated,
+      deliberately.** §10 anticipated `state/selectedEventContext.jsx` +
+      `hooks/useSelectedEvent.js`. Step 4 instead keeps `selectedEventKey` in
+      `Console` and passes props, mirroring the `selectedId`/`onSelect` pair
+      already flowing to `AssetStrip` — one extra level of drilling, no new
+      files, consistent with surrounding code. Revisit if a third consumer
+      appears.
 - [ ] ⚠️ **Source** a Cosmos 2221 TLE pair. This item previously assumed a
       fixture existed to be located; it does not. `tests/fixtures/` contains
       only `alfano_case.py` and `envisat_tles.py`, and every other
@@ -261,3 +309,303 @@ without manual intervention before calling Phase 5 done.
       `react/only-export-components` warns when a provider and its hook share
       a module. Still no external store: Zustand/Jotai/TanStack Query are
       pitch-relevant dependency decisions per CLAUDE.md, not incidental ones.
+
+
+---
+
+## 11. Step 4 — what shipped, and how it was verified
+
+**Components.** `components/panels/EventList.jsx` replaces the `PendingRegion`
+in the bottom strip's "Conjunction events" tab; `components/panels/EventDetail.jsx`
+replaces the placeholder gauge in the right-rail "Conjunction risk" panel.
+Derivation logic is in `lib/conjunctions.js` — separate from the components
+because vitest runs `environment: 'node'` with no jsdom, so a component cannot
+be rendered in a test but a pure function can.
+
+**Two event sources, always distinguishable.** A live run screens the tracked
+set against the selected object over the next 24 h. Alongside it, the October
+2004 Envisat/Zenith-2 conjunction is injected through the *same* endpoint and
+tagged `INJECTED · 2004 REPLAY`, so the console always has an event whose
+answer is independently known, and it can never be read as something happening
+in orbit now.
+
+**Three display rules the panels enforce.**
+
+1. Events are ranked client-side. The backend sorts by *coarse* separation
+   (`screening.py:499`), computed before TCA refinement, so wire order can put
+   a GREEN event above a RED one.
+2. A co-located pair is labelled, never coloured RED. Two paths reach us:
+   the backend refuses outright at exactly-zero relative velocity, and a
+   merely-docked pair returns a Pc that is outside the 2D method's domain.
+   Both are handled.
+3. Nothing is substituted for a number the pipeline would not produce. A
+   refused pair shows an em dash and the backend's verbatim reason.
+
+**Verification (2026-08-31), headless Chrome over CDP against a live backend:**
+
+| Check | Result |
+|---|---|
+| Injected Envisat row | `269 m`, `6.59e-4`, **Critical** — published 268.0 m / 0.000659 ✅ |
+| TCA rendered | `2004-10-22 05:10:37Z` |
+| Co-located ISS modules (NAUKA, POISK) | **Not assessed**, no Pc, backend reason quoted — not RED ✅ |
+| Live detections | `0 detected of 3 screened · 2 not assessed · vs ISS (ZARYA)` |
+| Empty state | "No close approaches in the live set" — stated as a result, not a failure |
+| Detail panel | full provenance line, computed values, T-minus slot reserved |
+| Tests / lint / build | 95 vitest tests pass, oxlint clean, `npm run build` succeeds |
+
+> ⚠️ **A stale backend process will silently serve pre-fix physics.** During
+> this verification the server already listening on `:8000` returned the
+> *old* wide-window bug for the Envisat case (16 km at 03:30, `pc: 0`, GREEN)
+> while the same request against a freshly started server returned the correct
+> 268.9 m / 6.59e-4 / RED. The repository code was never wrong. Restart the
+> backend before any demo or verification run, and treat a GREEN Envisat row
+> as a stale-server symptom first.
+
+---
+
+## 12. Step 5 — what shipped, and how it was verified
+
+**The Envisat replay is now a view, not a table row.** The `Envisat replay`
+tab in `StatusHeader` was a disabled placeholder; it is now a second screen
+(`pages/Replay.jsx`) with its own globe, its own clock, and its own panels.
+`App.jsx` holds the one piece of view state and unmounts the inactive page —
+each view owns a Cesium viewer and an animation loop, and keeping both alive
+would run two globes for one visible canvas. No router was added: two screens
+with no URL semantics do not justify a pitch-relevant dependency.
+
+**The clock is the whole trick.** A historical encounter cannot be shown on a
+"now, sped up" clock. `CesiumGlobe` gained an optional `simTimeFor(elapsedMs)`
+override; the live console leaves it null and behaves exactly as before, while
+the replay supplies `replaySimTime()`, which sweeps a window from 60 min before
+to 10 min after the real TCA and wraps. The window deliberately opens before
+04:20 UTC, the point at which ESA committed to the burn, so the decision moment
+is inside the replay rather than already past. ×60 was chosen over ×120 so the
+countdown decrements one simulated minute per real second; faster than that and
+the seconds digit jumps by enough to read as a glitch.
+
+**Two countdown modes, one component.** `TMinus` counts against real UTC for a
+live event (whose TCA is a real future instant) and against the caller's
+simulated clock for the replay. The injected 2004 row in the live console gets
+neither — it would read "T+21 years" — and instead offers a route into the
+replay view. An unknown or malformed TCA renders an em dash; it never falls
+back to `Date.now()`, which would produce a confident countdown to the wrong
+moment.
+
+**Four predictions, presented as agreement rather than convergence.** All four
+archived element sets are screened over one window around the real TCA, which
+makes the rows comparable and costs a sixth of what searching from each day's
+own epoch would. The computed values do **not** converge monotonically
+(329 → 234 → 152 → 269 m; Pc 2.74e-4 → 1.11e-3 → 1.93e-3 → 6.59e-4), so
+`PredictionTable` deliberately does not draw a trend line — that would assert a
+sharpening estimate the data does not show. What the four rows demonstrate is
+that every prediction, from a three-day-old element set to a same-day one, puts
+the encounter sub-kilometre and above ESA's acceptance threshold. That is also
+the paper's own framing: it reports a range, not a per-day figure.
+
+**Two reference bands, both labelled.** The published band (81–316 m,
+1.4e-4–5.5e-4) is what the paper reported. The asserted band (100–1000 m,
+1e-4–2.5e-3) is what `tests/test_envisat_replay.py` actually gates on, and is
+wider because this pipeline runs on public-catalog TLEs while ESA used
+Envisat's operational orbit determination. Showing only the published band
+would mark three of four rows as misses and misreport a passing pipeline;
+showing only the asserted band would hide that our inputs are coarser. A unit
+test asserts that at least one computed value falls *outside* the published
+band, so nobody can quietly widen those constants to make the table look
+tidier.
+
+### A real bug this step surfaced
+
+Step 4's globe highlight drew a connecting line between a conjunction's two
+objects, and that line **never rendered**. It could not be caught then: the
+only live conjunction available was the co-located ISS↔NAUKA pair, whose line
+is zero-length and invisible whether or not the code works. The replay's two
+objects are thousands of kilometres apart, which made the absence obvious.
+
+Two independent causes, both now fixed in `CesiumGlobe.jsx`:
+
+1. The endpoints were read back with `entity.position.getValue()` — that API
+   needs a `JulianDate`, and without one a release build of Cesium returns
+   nothing. The positions are now captured as the markers are placed.
+2. `polyline.positions` was reassigned every frame. Each assignment
+   invalidates the geometry, Cesium rebuilds the primitive asynchronously, and
+   re-invalidating on the next frame means the build never completes — the
+   entity stays present and valid the whole time and simply never draws. It is
+   now built once with a `CallbackProperty`, the supported path for geometry
+   that moves every frame.
+
+A `depthFailMaterial` was also added: the chord between two objects on opposite
+sides of the planet passes *through* it (in the verified frame, the midpoint
+sits 489 km below the surface), so without one that stretch is invisible and
+the pair reads as unconnected.
+
+**Verification (2026-08-31), headless Chrome over CDP against a live backend:**
+
+| Check | Result |
+|---|---|
+| Four prediction days | `329 m / 2.74e-4`, `234 m / 1.11e-3`, `152 m / 1.93e-3`, `269 m / 6.59e-4` — all **Critical**, all inside the asserted band ✅ |
+| Against `docs/validation-notes.md` §4.4 | 328.2 / 233.9 / 151.5 / 268.0 m — agrees to under a metre ✅ |
+| TCA computed vs published | `05:10:37Z` vs `05:10:35Z`, both shown |
+| Countdown running | `T-00:53:53` → `T-00:51:52` over 2 s of wall clock (×60) ✅ |
+| Pause | countdown **and** replay clock both frozen at the same instant ✅ |
+| Restart | returns to `T-00:59:22` / `04:11:14Z`, the window start ✅ |
+| Conjunction line | pixel-sampled along the chord: **41/41** samples are `#f43f5e` ✅ |
+| Injected row in live console | no countdown; offers "Open Envisat replay", which switches views ✅ |
+| Tests / lint / build | 134 vitest tests pass, oxlint clean, `npm run build` succeeds |
+
+**Known cosmetic limit.** At 1920×1080 the side rails scroll: "What ESA did"
+and the AI pending region are below the fold. Everything load-bearing — the
+countdown, the headline figures, the four-day table — is visible without
+scrolling. Left for the polish pass (step 9).
+
+**Still not verified in a browser:** `TMinus` in wall-clock mode. The live
+tracked set (CelesTrak `stations`) contains only co-located pairs, which take
+the "not assessed" branch and render no countdown, so there is currently no
+live event to count down to. The arithmetic behind it is unit-tested; the
+rendered path is not.
+
+---
+
+## 13. Step 5b — the event list now reads the scheduled pass
+
+**The frontend stopped running screening.** `useScreening.js` used to post one
+`/api/physics/screening` request per candidate from the browser. That was a
+workaround for a backend batch-failure bug, it was fine against CelesTrak's
+~20-object `stations` group, and it did not survive the real tracked set: an
+all-pairs pass over ~700 objects is roughly 1.6 hours of SGP4 and numpy, so the
+button had been capped off at 40 objects and the panel sat permanently empty
+while the server held real detections.
+
+The hook now reads `GET /api/monitoring/events` — the last completed pass,
+served from cache, returning instantly. `SCREENABLE_MAX` is gone. **REFRESH**
+re-reads the cached pass; **SCREEN NOW** asks the server to start a fresh one
+and returns immediately, then polls `/api/monitoring/status` (which carries no
+event payload) until the pass lands. Nothing in the UI ever blocks on physics.
+
+This also matches how conjunction assessment actually works: scheduled
+screenings against a catalogue, published results — not an operator waiting on
+a button.
+
+**The injected Envisat case is unchanged** and still goes through
+`/api/physics/screening` directly, so the console always carries one event
+whose published answer is known.
+
+**Coverage became a first-class claim.** `screen_all_pairs` caps how many gated
+pairs get the expensive refinement. When that cap bites, the pass screened the
+closest N candidates — *not* the set — so "no close approaches found" would be
+a false statement about coverage. `frontend/src/lib/monitoring.js` derives that
+distinction and the panel states it above any empty-state phrasing. A unit test
+pins the failure direction that matters: `describeCoverage` must not infer
+completeness from an **absent** `truncated` field. It did, and the test caught
+it before the UI could assert full coverage on the strength of a missing
+measurement.
+
+### A real bug this step surfaced
+
+`eventKey` was built from `origin + secondary_name + tca_utc_iso`. That was
+unique only while one fixed primary was screened against many candidates.
+All-pairs screening removed the guarantee: `ISS (ZARYA) ↔ ISS (NAUKA)` and
+`POISK ↔ ISS (NAUKA)` share a secondary, and both are refused as co-located so
+neither carries a TCA. The two collided into one React key — a row was dropped,
+and because selection is keyed on the same value, clicking the survivor would
+select the wrong pair. The key now includes both objects, preferring
+tracked-set ids over display names. Two regression tests cover it.
+
+**Verification (2026-09-06), headless Chrome over CDP against a live backend.**
+CelesTrak was unreachable from this machine, so the tracked set was seeded from
+the committed TLE snapshot (4 real station objects) via a scratch harness. The
+element sets are real but stale, so the *physics* below is not a meaningful
+current detection — what is verified here is the panel's plumbing.
+
+| Check | Result |
+|---|---|
+| Meta line | `0 CONJUNCTIONS · 3 NOT ASSESSED · 4 OBJECTS · 2 MIN AGO` ✅ |
+| Coverage note | "6 pairs evaluated, all 3 gated pairs refined", neutral styling ✅ |
+| Empty state | "No close approaches in the tracked set" — the complete-coverage wording, correctly chosen ✅ |
+| Co-located ISS modules | three distinct **Not assessed** rows, no Pc, no false RED ✅ |
+| Injected Envisat row | `269 m`, `6.59e-4`, **Critical** — published 268.0 m / 0.000659 ✅ |
+| Selection | detail panel fills with the provenance line and computed values ✅ |
+| Buttons | REFRESH / SCREEN NOW, neither blocking ✅ |
+| Browser console | clean after the `eventKey` fix (8 duplicate-key errors before) ✅ |
+| Tests / lint / build | 164 vitest tests pass, 78 pytest pass, oxlint clean, `npm run build` succeeds |
+
+**Not verified:** the `ready` path against a large truncated pass (needs
+CelesTrak), the `never_run` and `failed` empty/error branches in a browser
+(both were exercised by the API but not screenshotted), and `SCREEN NOW`'s
+poll-to-completion cycle end to end.
+
+---
+
+## 14. Step 3b — orbit tracks for a selected conjunction
+
+CLAUDE.md §5.1 requirement 3 asks that selecting an event highlight it on the
+globe *"including the orbit tracks of the two objects involved"*. The globe drew
+markers and a dashed chord between the pair, which answers *where are they* but
+not *why do they come close* — and two orbital planes crossing is the whole
+geometric explanation of a conjunction.
+
+`frontend/src/lib/orbitTrack.js` samples one revolution and `CesiumGlobe.jsx`
+draws it: both members of the pair in the event's risk colour, **primary solid,
+secondary dashed**, so shape carries identity and colour keeps meaning risk
+(the same rule §5.2 imposes on object type). An object selected on its own gets
+one accent-teal ring — chrome, never a risk token. At most three rings exist at
+once, re-sampled on a 250 ms throttle rather than per frame.
+
+### The decision: a closed ring, not a ground track
+
+Sampling a full period and converting each sample with **its own** instant's
+GMST draws a ground-track swath that shifts ~22.5° west per revolution and never
+closes. Rotating every sample by **one** instant's GMST instead draws the orbit
+as it stands at that moment: it closes, the Earth turns beneath it, and —
+the property everything rests on — the marker sits exactly on its own ring,
+because the marker is `eciToEcf(r_teme(t), gstime(t))` and the ring's centre
+sample is that same expression. A unit test pins it; a ring the marker visibly
+floats off would be worse than no ring at all.
+
+The rings are the markers' own paths — same element sets, same satellite.js
+propagation, same visualisation layer. They are **not** the post-burn trajectory
+of §5.2, which must still come back from `/api/physics/maneuver` as a sampled
+ephemeris because producing it means applying a ΔV to a state vector. Frame
+conversion is `satellite.eciToEcf`, so §1.1's ban on hand-rolled TEME→ECEF
+rotations holds.
+
+### Verified against the installed libraries, not assumed
+
+`satellite.js@6.0.2`, `cesium@1.143.0`, real ISS element set:
+
+| Claim | Measured |
+|---|---|
+| `satrec.no` is rad/min (`no_kozai`/`no_unkozai` do not exist here) | period 92.977 min vs 92.967 min from line 2's mean motion |
+| `eciToEcf` is a pure rotation | \|r\| identical to 1e-12 km either side |
+| Marker rides its ring | centre sample ↔ marker separation **0.0 km** |
+| Ring closure over one revolution | **24.7 km** (0.2° of arc) — real J2 drift, deliberately not stitched shut |
+
+`TRACK_SAMPLES` is 129 — odd on purpose, so the centre sample lands exactly on
+the drawn instant. With an even count the nearest sample is up to half a step
+(~170 km at LEO) away and the "marker rides its ring" guarantee quietly stops
+being true.
+
+### A real bug this step surfaced
+
+The click handler accepted any string entity id as an object selection. Cesium
+gives an entity added without an explicit id an auto-generated GUID — also a
+string — so clicking the conjunction chord already set `selectedId` to an id no
+object has, emptying the selected-object panel instead of doing nothing. Three
+more pickable polylines would have made it easy to hit. Selection now requires
+membership of the marker map.
+
+**Verification (2026-09-07), headless Chrome over CDP against a live backend.**
+CelesTrak is still blocking this IP, so the live tracked set is the committed
+4-object offline stations file — co-located objects whose rings coincide, which
+proves little. The Envisat replay is the real check, and it needs no third
+party.
+
+| Check | Result |
+|---|---|
+| Replay: two rings | solid Envisat + dashed Zenith-2, planes visibly crossing, both markers on their own ring ✅ |
+| Rings persist across frames | still drawn 6 s later, markers advanced along them ✅ (the `polyline.positions` reassignment bug would have made them vanish) |
+| Live pair (co-located) | neutral grey rings, never a risk colour for an unassessable pair ✅ |
+| Deselect | both rings and the chord removed ✅ |
+| Plain object selection | one accent-teal ring ✅ |
+| Injected 2004 event on the live console | no rings — `hasGlobePresence` correctly gates it ✅ |
+| Browser console | no errors or exceptions ✅ |
+

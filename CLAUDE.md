@@ -81,12 +81,29 @@ The project doc already commits to these scope reductions. Do not silently expan
 ## 2. Tech stack reference
 
 **Backend / physics:** Python, `sgp4`, `skyfield`, `astropy` (cross-check), `numpy`/`scipy`, FastAPI
-**Data source:** CelesTrak API (live TLEs, no auth) primary; Space-Track.org secondary
-**AI layer:** Claude API (Anthropic), structured JSON in/out
-**Frontend:** React, CesiumJS or Three.js (3D globe), dashboard panels
-**Testing:** `pytest`, with the Alfano case as a hardcoded regression test
+**Data source:** CelesTrak API (live TLEs, **no auth — there are no accounts**)
+primary; Space-Track.org secondary; committed offline set as the floor
+
+> **CelesTrak blocked this project's IP (2026-09-06).** DNS resolved, the whole
+> rest of the internet was reachable, and the TCP handshake to
+> celestrak.org:443 silently timed out — a firewall drop, not a rate-limit
+> response. Contributing cause on our side: before the fix, a failed fetch was
+> retried on *every* `/api/tracking/objects` request plus every monitor pass.
+> That is now backed off 60 s and never runs on a request thread.
+>
+> Since CelesTrak has no accounts, this is IP-scoped and no registration can
+> undo it. The response was `backend/data/offline_tracked_set.json` — a capped
+> subset of real element sets the server falls back to, regenerated with
+> `scripts/refresh_tracked_set.py` from any working network. **The demo no
+> longer depends on a third party being reachable.** The offline set seeds
+> INPUTS only; it is never selected for producing conjunctions (§5.2).
+**AI layer:** Google Gemini (`gemini-2.5-flash`), structured JSON in/out — see the provider note below
+**Frontend:** React + Vite, CesiumJS (3D globe), plain per-component CSS, vitest
+**Testing:** `pytest` (backend), `vitest` (frontend), with the Alfano case as a hardcoded regression test
 
 Don't introduce a different orbital mechanics library, a different frontend framework, or swap the LLM provider without discussing it — these are pitch-relevant decisions, not incidental ones.
+
+**LLM provider (decided 2026-08-31).** This file originally specified the Claude API; the implementation in `backend/ai/advisor.py` uses Gemini 2.5 Flash via `GEMINI_API_KEY`. That divergence was raised and the human chose to **keep Gemini** rather than switch before the demo. This is now the recorded decision, not an unnoticed drift — the AI layer's contract (structured JSON in, structured JSON out, narrates numbers it is handed, computes nothing) is provider-independent and unchanged. The deterministic offline fallback stays in place so the physics dashboard survives an AI outage on stage. Don't "fix" this back to Anthropic without asking.
 
 ---
 
@@ -105,7 +122,7 @@ Top-level structure — a judge should be able to tell what's physics, what's AI
 
 - `docs/` — spec, pitch script, and validation write-up (source of truth; don't edit `project-doc.md`/`pitch-script.md`, add new docs alongside them)
 - `backend/physics/` — the deterministic orbital-mechanics pipeline; no LLM calls anywhere in this tree
-- `backend/ai/` — the Claude API explanation/recommendation layer; only consumes physics output as structured JSON
+- `backend/ai/` — the LLM explanation/recommendation layer (Gemini — see §2); only consumes physics output as structured JSON
 - `backend/api/` — FastAPI routes tying physics + AI together for the frontend
 - `tests/` — pytest suite, including the Alfano regression test and Envisat replay validation (must pass before demo)
 - `frontend/` — React app (globe, countdown, dashboard, AI advisor panel)
@@ -114,3 +131,152 @@ Top-level structure — a judge should be able to tell what's physics, what's AI
 Within `backend/physics/`, keep pipeline stages in separate files matching Section 3 of `docs/project-doc.md` (TLE ingest, propagation, frame transforms, screening, TCA, collision probability, maneuver) rather than one large module — this keeps the physics/AI boundary and each validated stage easy to point to.
 
 A short `docs/validation-notes.md` ("here's how we know our numbers are right") is worth writing early and keeping current — it's the single artifact most likely to earn credibility with a technical judge without them having to ask.
+
+---
+
+## 5. Demo target for the live console (agreed 2026-08-31)
+
+The human set these requirements for the final demo. They are the destination
+for the live-console half of the product; the Envisat replay (already built)
+remains the correctness proof. Work toward these, and keep the guardrails in
+§5.2 — they are what stop each requirement from quietly becoming a fake.
+
+### 5.1 What the live console must do
+
+1. **Run screening returns a populated list of real conjunction events.** Not
+   an empty honest result — actual detections.
+2. **Every event gets the Envisat treatment**: orbit shown, collision risk,
+   TCA, the full detail panel.
+3. **Selecting an event highlights it on the globe**, including the orbit
+   tracks of the two objects involved.
+4. **The post-maneuver orbit is drawn in a different colour** from the
+   original trajectory, so the burn's effect is visible rather than described.
+5. **Satellites and debris are visually distinguishable** for legibility on a
+   projector.
+6. **The AI layer advises on a selected high-risk event**, and screening runs
+   automatically on an interval so a human does not have to press the button —
+   a new high-risk detection raises a non-blocking alert carrying the AI's
+   explanation.
+
+### 5.2 Guardrails — how each of those stays honest
+
+These exist because every requirement above has an easy fake version that
+would look identical on stage and collapse under one judge's question.
+
+- **"Ingested" means seeding INPUTS, never OUTPUTS.** The list is populated by
+  pointing the pipeline at a larger, debris-rich candidate set (real TLEs from
+  CelesTrak) so the real screening finds real conjunctions. Never seed,
+  synthesise, or hardcode a Pc, a miss distance, a TCA, or a threat level.
+  An empty result from a real run is a result; a populated list of invented
+  numbers is the one thing that would end this project's credibility.
+- **The AI never runs the screening.** Continuous monitoring is the *physics*
+  pipeline on a timer. The AI is handed the results afterwards and explains
+  them. Never describe it, name it, or label it in the UI as "AI screening" or
+  "AI monitoring" — that phrasing inverts the project's core claim ("real
+  physics computes the risk, AI makes it understandable") and a judge hearing
+  it will reasonably conclude the LLM is doing the orbital mechanics.
+- **The post-burn trajectory must come from the backend as a sampled
+  ephemeris.** `/api/physics/maneuver` currently returns only scalars while
+  computing a post-burn ECI state internally (`maneuver.py:141-162`); extend
+  the endpoint to return pre-burn and post-burn tracks. Do NOT derive the
+  post-burn orbit in the frontend — that is orbital mechanics in JavaScript,
+  which §1.1 and §1.3 both forbid. Returning both tracks from one source also
+  keeps the two drawn lines genuinely comparable.
+- **Object-type colour must not compete with the risk scale.**
+  `frontend/src/styles/tokens.css` defines exactly two colour systems
+  (`--accent-*` chrome, `--risk-*` threat) and forbids mixing them. Encode
+  payload / debris / rocket-body by **shape** plus a muted neutral tint, and
+  leave colour meaning risk. Also: object type is parsed out of the CelesTrak
+  name (`DEB`, `R/B`), which is a display heuristic — label it as one rather
+  than implying authoritative catalogue metadata.
+
+### 5.3 Known blockers, in the order they need solving
+
+1. ~~The coarse filter is switched off.~~ **DONE, and it was worse than a
+   switch.** The filter rejected pairs more than 15° apart in inclination,
+   which deleted this project's own validation case: Envisat and the Zenith-2
+   fragment are 27.2° apart, so screening reported *no event*. The check is
+   backwards — a large plane difference is what produces a high relative
+   velocity at encounter, so it preferentially discarded the most dangerous
+   conjunctions. Removed, with a regression test. The apogee/perigee altitude
+   check (Hoots, Crawford & Roehrich 1984) is sound and stays.
+2. ~~One unusable candidate fails the whole batch.~~ **DONE.** Per-candidate
+   failures are isolated in `backend/api/assessment.py`; a refused pair comes
+   back inside `events` marked `unassessable` with the pipeline's own reason.
+   Request-level failures (unparseable primary, malformed window) are now 400s
+   rather than 500s, and unparseable candidates are named in
+   `rejected_candidates`. `tests/test_screening_batch_isolation.py` pins it.
+   `frontend/src/hooks/useScreening.js` no longer needs the per-candidate
+   worker pool at all — it reads the scheduled pass instead (blocker 7).
+3. **`parse_tle_pair` accepted garbage.** Handed "nonsense" it returned a
+   usable satellite at catalogue number 0 with a 1999 epoch, which propagates
+   and produces conjunctions with real objects. Now validates and raises
+   `InvalidTLEError`. This mattered more once we ingest hundreds of TLEs.
+   **DONE.**
+4. Maneuver endpoint does not return trajectories (see §5.2). **OPEN.**
+5. ~~Orbit tracks are not rendered at all yet — only point markers.~~ **DONE.**
+   Selecting an event draws one revolution of each object's orbit
+   (`frontend/src/lib/orbitTrack.js`), in the event's risk colour, primary
+   solid and secondary dashed so shape carries identity while colour keeps
+   meaning risk. Sampling in TEME and rotating every sample by the SAME
+   instant's GMST is what makes it a closed ring rather than a ground track,
+   and it is what puts the marker exactly on its own ring — pinned by a unit
+   test, because a ring the marker visibly floats off is worse than no ring.
+   The ~25 km the ring fails to close by is real J2 drift over one revolution
+   and is left alone rather than stitched shut. This is the marker's own path
+   from the same element set, so it stays inside the visualisation layer;
+   blocker 4's POST-BURN track is a different claim and still has to come from
+   the backend.
+6. ~~Frontend still fetches its own TLEs from CelesTrak.~~ **DONE.** The server
+   owns the tracked set (`GET /api/tracking/objects`) and
+   `useLiveSatellites.js` reads from there, so the globe and the event list
+   describe the same objects.
+7. ~~The event list ran its own screening and could not reach the scheduled
+   results.~~ **DONE.** `useScreening.js` posted one
+   `/api/physics/screening` request per candidate — workable against ~20
+   station objects, hopeless against ~700, so the button was capped off at 40
+   and the panel sat permanently empty while the server held real detections.
+   It now reads `GET /api/monitoring/events` (the last completed pass, served
+   from cache) and merges the injected Envisat case. The cap is gone; REFRESH
+   re-reads, SCREEN NOW asks for a fresh pass and returns immediately.
+   Coverage honesty moved with it: a pass whose refinement was capped
+   (`stats.truncated`) is never described as a complete screening, and
+   `frontend/src/lib/monitoring.js` refuses to infer completeness from an
+   absent `truncated` field.
+
+### What the screening architecture actually became
+
+Measured, not assumed. A full all-pairs pass over ~700 objects is roughly
+1.6 hours, and no tuning makes it a click — the cost is inherent to resolving a
+5 km encounter at 15 km/s on a sampled grid. So screening runs on a timer
+(`backend/api/monitoring.py`) and the API serves the last completed pass
+instantly. That is also how real conjunction assessment works: scheduled
+screenings, published results, not a button an operator waits on.
+
+Three stages, cheapest first (`backend/physics/screening.py`):
+
+1. `_cache_ephemerides` — one propagation per object rather than per pair.
+   `screen_pair` propagates both its objects every call, so all-pairs cost
+   O(N²) propagations for O(N) objects' worth of information.
+2. `_gate_pairs` — vectorised, with a **rigorous lower bound** on the true
+   minimum computed per sample interval. Never an answer; only a gate. A
+   sampled minimum overstates a real approach by up to 2.8× at 60 s.
+3. `screen_pair` — the validated de-aliasing refinement. Every reported
+   separation comes from here.
+
+Measured on 695 real objects over 24 h: 241,165 pairs evaluated, 5.1% gated,
+33 real conjunctions found when refining the closest 300. **Threat spread from
+live data: 0 RED, 1 YELLOW, 32 GREEN** — which is why §5.1's populated list
+pairs real detections with injected historical cases for the high-risk rows.
+
+`PHYSICS_TRACE=1` re-enables the per-stage prints (`backend/physics/trace.py`);
+they are off by default because all-pairs screening would otherwise emit tens
+of thousands of lines per pass.
+
+Agreed build order: **backend scaling first** (blockers 1-2 and the wider
+candidate set), because every other requirement needs the event list to
+actually contain events before it has anything to act on.
+
+Whenever `backend/physics/` changes for any of this, run `pytest` — the Alfano
+case and the Envisat replay are the regression tests that say whether the
+change was safe, and a failure there is a stop-everything bug (§1.2, §3).
