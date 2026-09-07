@@ -1,114 +1,125 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import * as satellite from 'satellite.js'
 
+import { getTrackedObjects } from '../api/tracking.js'
+import { CanceledError } from '../api/client.js'
+import { buildSatrec, propagateToGeodetic } from '../lib/geodetic.js'
+import { classifyObject } from '../lib/objectType.js'
+import { orbitTrackEcef } from '../lib/orbitTrack.js'
 import { parseTleText } from '../lib/tle.js'
 import { readCachedTle, safeLocalStorage, writeCachedTle } from '../lib/tleCache.js'
 import { SNAPSHOT_CAPTURED_UTC, TLE_SNAPSHOT_TEXT } from '../lib/tleSnapshot.js'
 
 /**
- * useLiveSatellites — obtain real TLEs and propagate them in the browser.
+ * useLiveSatellites — obtain the tracked set and propagate it in the browser.
  *
  * ============================ BOUNDARY NOTE ============================
  * This is an AMBIENT VISUALISATION LAYER, not part of the validated physics
- * pipeline. Positions come from CelesTrak TLEs propagated by satellite.js in
- * the browser, purely so the globe shows real objects in real orbits.
+ * pipeline. Positions come from element sets propagated by satellite.js in the
+ * browser, purely so the globe shows real objects in real orbits.
  *
- * Nothing here feeds conjunction screening, TCA refinement, Pc, or maneuver
- * planning. Those are computed exclusively by the Python pipeline behind
- * /api/physics/*, which is the only thing validated against the Alfano
- * benchmark and the Envisat replay. A satellite marker on this globe means
- * "this object is up there", never "the pipeline assessed this".
+ * No NUMBER computed here feeds conjunction screening, TCA refinement, Pc, or
+ * maneuver planning. Those are computed exclusively by the Python pipeline,
+ * which is the only thing validated against the Alfano benchmark and the
+ * Envisat replay. A satellite marker on this globe means "this object is up
+ * there", never "the pipeline assessed this".
+ *
+ * That covers `orbitTrackFor` too: an orbit ring is the marker's own path over
+ * one revolution, from the same element set and the same propagator. It is NOT
+ * the post-burn trajectory of CLAUDE.md §5.2, which must come back from
+ * /api/physics/maneuver as a sampled ephemeris. See lib/orbitTrack.js.
  *
  * Do not route any number from this hook into an AI prompt or a risk display.
  * =======================================================================
  *
- * SOURCE HONESTY. The feed can come from three places, and the caller MUST
- * show which one is in use — `source` is returned for exactly that purpose:
+ * THE SERVER OWNS THE SET. This hook used to fetch CelesTrak directly. It now
+ * reads /api/tracking/objects, because the background monitor screens the
+ * server's set: if the browser drew a different fetch, an event could name
+ * objects that are not on this globe and selecting it would highlight nothing.
+ * The console's premise is that the event list and the globe describe the same
+ * objects, and that only holds with one source.
  *
- *   'live'     fetched from CelesTrak just now
- *   'cached'   a previous live fetch, replayed from localStorage
- *   'snapshot' the committed offline fallback (CelesTrak unreachable)
+ * SOURCE HONESTY. The set can reach the screen four ways, and the caller MUST
+ * show which — rendering stale data as live is the same class of dishonesty as
+ * fabricating a number:
  *
- * Rendering 'snapshot' or 'cached' data as though it were live is the same
- * class of dishonesty as fabricating a number. An earlier version of this
- * hook silently swallowed fetch failures and left the UI showing "Live from
- * CelesTrak" above zero objects; that is the bug this contract prevents.
+ *   'live'     the server fetched it from CelesTrak just now
+ *   'cached'   the server replayed its own earlier fetch
+ *   'bundled'  the server fell back to its COMMITTED offline set. Still the
+ *              set it screens, so events match the globe — it is simply old,
+ *              and the epoch must be shown.
+ *   'replay'   the BACKEND is unreachable; replaying the last set this browser
+ *              successfully received, from localStorage
+ *   'snapshot' backend unreachable and nothing cached locally — the committed
+ *              offline fallback, which is a small stations set and NOT what
+ *              the server screens
  *
- * Propagation is delegated entirely to satellite.js (the standard JS port of
- * the SGP4 family the backend's Python `sgp4` package belongs to). No orbital
- * mechanics are hand-written here, per CLAUDE.md 1.1.
+ * The last one matters most: on 'snapshot' the globe and the event list are
+ * genuinely describing different object sets, and the UI has to say so rather
+ * than quietly showing markers that no event can ever point at.
+ *
+ * Propagation lives in lib/geodetic.js, shared with the historical Envisat
+ * replay so both views place markers through the same code path. It delegates
+ * entirely to satellite.js — no orbital mechanics are hand-written anywhere in
+ * the frontend, per CLAUDE.md §1.1.
  */
-
-const CELESTRAK_URL =
-  'https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle'
-
-/**
- * Deliberately short. CelesTrak either answers quickly or is unreachable; a
- * long timeout only means more seconds of an empty globe before the UI
- * admits something is wrong.
- */
-const FETCH_TIMEOUT_MS = 8000
 
 /**
  * @typedef {object} LiveSatellite
  * @property {string} id
  * @property {string} name
  * @property {string} noradId
+ * @property {string} kind      'payload' | 'debris' | 'rocket-body' | 'unknown'
  * @property {number} latitude_deg
  * @property {number} longitude_deg
  * @property {number} altitude_km
  */
 
-/**
- * Propagate one satrec to an instant and convert to geodetic coordinates.
- * Returns null when SGP4 reports a decayed or otherwise unpropagatable
- * object — a skipped marker is correct, an invented position is not.
- */
-function propagateToGeodetic(satrec, when) {
-  const pv = satellite.propagate(satrec, when)
-  if (!pv?.position) return null
-
-  const gmst = satellite.gstime(when)
-  const geo = satellite.eciToGeodetic(pv.position, gmst)
-
-  const latitude_deg = satellite.degreesLat(geo.latitude)
-  const longitude_deg = satellite.degreesLong(geo.longitude)
-  const altitude_km = geo.height
-
-  if (
-    !Number.isFinite(latitude_deg) ||
-    !Number.isFinite(longitude_deg) ||
-    !Number.isFinite(altitude_km)
-  ) {
-    return null
+/** Turn one wire object into a propagatable record, or null if rejected. */
+function toRecord(obj) {
+  const satrec = buildSatrec(obj.line1, obj.line2, obj.name)
+  if (!satrec) return null
+  return {
+    id: obj.id,
+    name: obj.name,
+    noradId: obj.norad_id ?? obj.id,
+    // line1/line2 are retained because the physics endpoints take raw TLE
+    // strings. Forwarding SOURCE data is not a breach of the boundary note
+    // above — a TLE is catalogue data, not a number this hook computed.
+    line1: obj.line1,
+    line2: obj.line2,
+    kind: classifyObject(obj.name),
+    satrec,
   }
-
-  return { latitude_deg, longitude_deg, altitude_km }
 }
 
-/** Turn raw CelesTrak text into propagatable satrecs. */
-function buildSatrecs(text) {
+/** Build records from the server payload. */
+function recordsFromServer(objects) {
+  const built = []
+  for (const obj of objects ?? []) {
+    const rec = toRecord(obj)
+    if (rec) built.push(rec)
+  }
+  return built
+}
+
+/** Build records from raw 3-line TLE text (the offline fallbacks). */
+function recordsFromText(text) {
   const built = []
   for (const r of parseTleText(text)) {
-    try {
-      const satrec = satellite.twoline2satrec(r.line1, r.line2)
-      // satellite.js signals a rejected element set via a nonzero error.
-      if (!satrec || satrec.error) {
-        console.warn(`[tracking] rejected TLE for ${r.name}: error=${satrec?.error}`)
-        continue
-      }
-      built.push({ id: r.noradId, name: r.name, noradId: r.noradId, satrec })
-    } catch (err) {
-      // Never swallow this: a propagator rejecting every element set looks
-      // identical to "no satellites in view".
-      console.error(`[tracking] failed to build satrec for ${r.name}:`, err)
-    }
+    const rec = toRecord({
+      id: r.noradId,
+      name: r.name,
+      norad_id: r.noradId,
+      line1: r.line1,
+      line2: r.line2,
+    })
+    if (rec) built.push(rec)
   }
   return built
 }
 
 /**
- * Load the tracked-object set and expose a propagator for it.
+ * Load the tracked set and expose a propagator for it.
  *
  * Returns records plus a `propagateAll(when)` function rather than ticking
  * internally: the Cesium render loop owns the clock, so this hook would
@@ -119,11 +130,14 @@ function buildSatrecs(text) {
  *   count: number,
  *   loading: boolean,
  *   error: Error | null,
- *   source: 'live' | 'cached' | 'snapshot' | null,
+ *   source: 'live' | 'cached' | 'bundled' | 'replay' | 'snapshot' | null,
+ *   serverGroups: string[],
+ *   rejected: Array<{name: string, reason: string}>,
  *   snapshotEpoch: string,
  *   cachedAt: number | null,
  *   refresh: () => void,
- *   propagateAll: (when: Date) => LiveSatellite[]
+ *   propagateAll: (when: Date) => LiveSatellite[],
+ *   orbitTrackFor: (id: string, when: Date) => Array<{x: number, y: number, z: number}> | null
  * }}
  */
 export function useLiveSatellites() {
@@ -131,76 +145,97 @@ export function useLiveSatellites() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [source, setSource] = useState(null)
+  const [serverGroups, setServerGroups] = useState([])
+  const [rejected, setRejected] = useState([])
   const [cachedAt, setCachedAt] = useState(null)
   const [nonce, setNonce] = useState(0)
 
   const recordsRef = useRef(records)
   recordsRef.current = records
 
+  // id -> record, rebuilt only when the records array itself changes. The
+  // render loop looks objects up a few times a second against a set that can
+  // run to several hundred, so a linear scan per lookup is avoidable work.
+  const byIdRef = useRef({ source: null, map: new Map() })
+
   const refresh = useCallback(() => setNonce((n) => n + 1), [])
 
   useEffect(() => {
     let disposed = false
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-
-    /** Apply a resolved payload, unless this effect run was torn down. */
-    const apply = (text, nextSource, fetchedAt = null) => {
-      if (disposed) return
-      setRecords(buildSatrecs(text))
-      setSource(nextSource)
-      setCachedAt(fetchedAt)
-      setLoading(false)
-    }
 
     const load = async () => {
-      // 1. A recent successful fetch, replayed. Avoids re-hitting CelesTrak
-      //    on every reload — repeated fetches are what got this machine
-      //    temporarily blocked, and CLAUDE.md asks us not to hammer it.
-      const storage = safeLocalStorage()
-      const cached = readCachedTle(storage)
-      if (cached) {
-        apply(cached.text, 'cached', cached.fetchedAt)
-        return
-      }
-
-      // 2. Live fetch.
+      setLoading(true)
       try {
-        const res = await fetch(CELESTRAK_URL, { signal: controller.signal })
-        if (!res.ok) throw new Error(`CelesTrak returned HTTP ${res.status}`)
-
-        const text = await res.text()
-        if (parseTleText(text).length === 0) {
-          throw new Error('CelesTrak returned no usable TLEs')
-        }
-
-        writeCachedTle(text, storage)
-        if (!disposed) setError(null)
-        apply(text, 'live')
-      } catch (err) {
-        // A torn-down StrictMode run must not fall through to the snapshot
-        // path: the run that replaced it is still in flight, and clobbering
-        // its result is how the old silent-empty state happened.
+        const payload = await getTrackedObjects({ signal: controller.signal })
         if (disposed) return
 
-        // 3. Offline fallback. The globe stays populated with real objects,
-        //    and `source: 'snapshot'` obliges the UI to say so. The error is
-        //    retained so the reason stays visible rather than papered over.
-        const reason =
-          err?.name === 'AbortError'
-            ? new Error(`CelesTrak did not respond within ${FETCH_TIMEOUT_MS / 1000}s`)
-            : err instanceof Error
-              ? err
-              : new Error(String(err))
+        const built = recordsFromServer(payload.objects)
+        if (built.length === 0) {
+          throw new Error(
+            payload.error ?? 'the tracked set came back with no usable objects',
+          )
+        }
 
-        console.warn(
-          '[tracking] live feed unavailable, using bundled snapshot:',
-          reason.message,
+        // Cache the raw payload so a later backend outage replays the SAME
+        // objects the server was screening, not a different set.
+        try {
+          const storage = safeLocalStorage()
+          writeCachedTle(
+            payload.objects.map((o) => `${o.name}\n${o.line1}\n${o.line2}`).join('\n'),
+            storage,
+          )
+        } catch {
+          // A full or disabled localStorage is not a reason to fail the load.
+        }
+
+        setRecords(built)
+        // The server's own provenance passes straight through: 'live' means it
+        // fetched from CelesTrak just now, 'cached' means it replayed its own
+        // earlier fetch, 'bundled' means it fell back to its committed offline
+        // set. All three are the set the server SCREENS, so events and globe
+        // markers still correspond — that is what separates them from the
+        // browser-side 'replay'/'snapshot' states below.
+        setSource(
+          payload.source === 'live' || payload.source === 'bundled'
+            ? payload.source
+            : 'cached',
         )
+        setServerGroups(payload.groups ?? [])
+        setRejected(payload.rejected ?? [])
+        setCachedAt(payload.fetched_at_unix ? payload.fetched_at_unix * 1000 : null)
+        setError(payload.error ? new Error(payload.error) : null)
+        setLoading(false)
+        return
+      } catch (err) {
+        if (disposed || err instanceof CanceledError) return
+
+        const reason = err instanceof Error ? err : new Error(String(err))
+        console.warn('[tracking] backend tracked set unavailable:', reason.message)
+
+        // 1. The last set this browser received from the server.
+        const storage = safeLocalStorage()
+        const cached = readCachedTle(storage)
+        if (cached) {
+          const built = recordsFromText(cached.text)
+          if (built.length > 0) {
+            setRecords(built)
+            setSource('replay')
+            setCachedAt(cached.fetchedAt)
+            setError(reason)
+            setLoading(false)
+            return
+          }
+        }
+
+        // 2. The committed offline fallback. Deliberately last: it is a small
+        //    stations set, NOT the set the server screens, so events and globe
+        //    markers will not correspond. The UI must say so.
+        setRecords(recordsFromText(TLE_SNAPSHOT_TEXT))
+        setSource('snapshot')
+        setCachedAt(null)
         setError(reason)
-        apply(TLE_SNAPSHOT_TEXT, 'snapshot')
-      } finally {
-        clearTimeout(timer)
+        setLoading(false)
       }
     }
 
@@ -208,7 +243,6 @@ export function useLiveSatellites() {
 
     return () => {
       disposed = true
-      clearTimeout(timer)
       controller.abort()
     }
   }, [nonce])
@@ -219,9 +253,37 @@ export function useLiveSatellites() {
     for (const rec of recordsRef.current) {
       const geo = propagateToGeodetic(rec.satrec, when)
       if (!geo) continue
-      out.push({ id: rec.id, name: rec.name, noradId: rec.noradId, ...geo })
+      out.push({
+        id: rec.id,
+        name: rec.name,
+        noradId: rec.noradId,
+        kind: rec.kind,
+        ...geo,
+      })
     }
     return out
+  }
+
+  /**
+   * One revolution of an object's orbit, in the Earth-fixed frame, for the
+   * instant the globe is drawing.
+   *
+   * Returns null when the id is not tracked or the element set will not
+   * propagate — the caller draws no ring, which is the honest outcome. A
+   * partial or invented track would read as an orbit that stops in mid-air.
+   *
+   * @param {string} id
+   * @param {Date} when
+   * @returns {Array<{x: number, y: number, z: number}>|null} km, ECEF
+   */
+  const orbitTrackFor = (id, when) => {
+    const records_ = recordsRef.current
+    if (byIdRef.current.source !== records_) {
+      byIdRef.current = { source: records_, map: new Map(records_.map((r) => [r.id, r])) }
+    }
+    const rec = byIdRef.current.map.get(id)
+    if (!rec) return null
+    return orbitTrackEcef(rec.satrec, when)
   }
 
   return {
@@ -230,9 +292,12 @@ export function useLiveSatellites() {
     loading,
     error,
     source,
+    serverGroups,
+    rejected,
     snapshotEpoch: SNAPSHOT_CAPTURED_UTC,
     cachedAt,
     refresh,
     propagateAll,
+    orbitTrackFor,
   }
 }
