@@ -8,6 +8,7 @@ historical Envisat 2004 replay event data, and AI decision support recommendatio
 
 from datetime import datetime, timedelta, timezone
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, status
@@ -17,6 +18,9 @@ from skyfield.api import load
 
 from backend.ai.advisor import get_ai_advice
 from backend.ai.schema import AIAdvisorRequest, AIAdvisorResponse, ConjunctionContext, ManeuverOption
+from backend.api.assessment import assess_conjunction, threat_level
+from backend.api.monitoring import ScreeningMonitor
+from backend.api.tracked_set import TrackedSet
 from backend.physics.collision_probability import _tle_covariance_rtn, compute_pc, covariance_rtn_to_eci
 from backend.physics.maneuver import simulate_maneuver
 from backend.physics.propagation import propagate
@@ -27,6 +31,41 @@ from tests.fixtures.envisat_tles import ENVISAT_TLES, ZENITH2_TLES
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("orbital_risk_api")
+
+# ---------------------------------------------------------------------------
+# Tracked set and continuous monitoring
+# ---------------------------------------------------------------------------
+#
+# The catalogue the console tracks lives here, on the server, so that (a)
+# screening runs without a browser open and (b) the event list and the globe
+# describe the same objects. See tracked_set.py for the full reasoning.
+#
+# Groups are debris-rich by design: `stations` is ~20 mostly co-located
+# objects, which is why screening it finds nothing. These are real catalogue
+# populations with real close approaches — the list is populated by widening
+# the INPUT, never by seeding output (CLAUDE.md §5.2).
+TRACKED_GROUPS = [
+    g.strip()
+    for g in os.environ.get(
+        "TRACKED_GROUPS", "cosmos-2251-debris,iridium-33-debris",
+    ).split(",")
+    if g.strip()
+]
+
+# Seconds between passes. A pass over a few hundred objects takes minutes, so
+# this is a floor, not a promise.
+MONITOR_INTERVAL_S = float(os.environ.get("MONITOR_INTERVAL_S", "900"))
+
+# Cap on refinements per pass. Without it a full pass is ~1.6 h; with it the
+# closest-bound pairs are refined and the response says it was truncated.
+MONITOR_MAX_REFINE = int(os.environ.get("MONITOR_MAX_REFINE", "300"))
+
+tracked_set = TrackedSet(TRACKED_GROUPS)
+monitor = ScreeningMonitor(
+    tracked_set,
+    interval_s=MONITOR_INTERVAL_S,
+    max_refine_pairs=MONITOR_MAX_REFINE,
+)
 
 app = FastAPI(
     title="Orbital Risk Advisor API",
@@ -177,18 +216,39 @@ def compute_tca_endpoint(req: TCAPhysicsRequest) -> Dict[str, Any]:
 def screening_endpoint(req: ScreeningPhysicsRequest) -> Dict[str, Any]:
     """
     Screen candidate objects against a primary satellite for conjunction threats.
+
+    One unusable candidate does not fail the batch. Pairs the physics declines
+    to assess come back inside `events` marked `unassessable` with the reason,
+    so the caller can send one request for many candidates instead of one
+    request each. Only a failure that invalidates the whole request — an
+    unparseable primary, a malformed window — is an error response.
     """
     try:
         primary_sat = parse_tle_pair(req.primary.line1, req.primary.line2, req.primary.name)
-        candidate_sats = [
-            parse_tle_pair(c.line1, c.line2, c.name) for c in req.candidates
-        ]
 
         ts = load.timescale()
         dt_start = datetime.fromisoformat(req.start_utc_iso.replace("Z", "+00:00"))
         start_time = ts.from_datetime(dt_start)
         end_time = ts.from_datetime(dt_start + timedelta(hours=req.search_duration_hours))
+    except Exception as e:
+        logger.error("screening_endpoint: bad request: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Screening request could not be prepared: {str(e)}",
+        )
 
+    # A candidate whose element set will not parse is that candidate's problem,
+    # not the batch's.
+    candidate_sats = []
+    rejected: List[Dict[str, str]] = []
+    for c in req.candidates:
+        try:
+            candidate_sats.append(parse_tle_pair(c.line1, c.line2, c.name))
+        except Exception as exc:
+            logger.warning("screening_endpoint: unparseable candidate %s: %s", c.name, exc)
+            rejected.append({"name": c.name, "reason": str(exc)})
+
+    try:
         flagged_candidates = screen_candidates(
             primary=primary_sat,
             candidates=candidate_sats,
@@ -197,53 +257,27 @@ def screening_endpoint(req: ScreeningPhysicsRequest) -> Dict[str, Any]:
             threshold_km=req.coarse_threshold_km,
             skip_coarse_filter=True,
         )
-
-        events_out = []
-        for c in flagged_candidates:
-            w_start = ts.tt_jd(float(c.min_separation_time.tt) - (7200.0 / 86400.0))
-            w_end = ts.tt_jd(float(c.min_separation_time.tt) + (7200.0 / 86400.0))
-            tca_res = compute_tca_from_tles(c.primary, c.secondary, w_start, w_end, threshold_km=500.0)
-
-            if not tca_res:
-                continue
-
-            elem1 = _orbital_elements_from_tle(c.primary)
-            elem2 = _orbital_elements_from_tle(c.secondary)
-
-            cov1_rtn = _tle_covariance_rtn(elem1["inclination_deg"], elem1["perigee_alt_km"], elem1["eccentricity"])
-            cov2_rtn = _tle_covariance_rtn(elem2["inclination_deg"], elem2["perigee_alt_km"], elem2["eccentricity"])
-
-            cov1_eci = covariance_rtn_to_eci(cov1_rtn, tca_res.state1_eci.pos_eci_km, tca_res.state1_eci.vel_eci_km_s)
-            cov2_eci = covariance_rtn_to_eci(cov2_rtn, tca_res.state2_eci.pos_eci_km, tca_res.state2_eci.vel_eci_km_s)
-
-            pc = compute_pc(
-                tca_res.state1_eci,
-                tca_res.state2_eci,
-                cov1_eci,
-                cov2_eci,
-                hard_body_radius_km=0.0145,
-            )
-
-            events_out.append({
-                "secondary_name": c.secondary.name,
-                "tca_utc_iso": tca_res.tca_time.utc_strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "miss_distance_m": tca_res.miss_distance_km * 1000.0,
-                "pc": pc,
-                "relative_speed_km_s": tca_res.rel_velocity_km_s,
-                "threat_level": "RED" if pc >= 1e-4 else ("YELLOW" if pc >= 1e-5 else "GREEN"),
-            })
-
-        return {
-            "primary_name": primary_sat.name,
-            "candidates_screened": len(candidate_sats),
-            "events": events_out,
-        }
     except Exception as e:
-        logger.error("screening_endpoint failed: %s", e)
+        logger.error("screening_endpoint: screening stage failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Screening failed: {str(e)}",
         )
+
+    events_out = []
+    for c in flagged_candidates:
+        record = assess_conjunction(c, ts)
+        if record is not None:
+            events_out.append(record)
+
+    return {
+        "primary_name": primary_sat.name,
+        "candidates_screened": len(candidate_sats),
+        "events": events_out,
+        # Named, not silent: a candidate that never reached the pipeline must
+        # be visible as such rather than looking like one with no conjunction.
+        "rejected_candidates": rejected,
+    }
 
 
 @app.post("/api/physics/maneuver", tags=["Physics Pipeline"])
@@ -307,3 +341,122 @@ def ai_advise_endpoint(req: AIAdvisorRequest) -> AIAdvisorResponse:
     Automatically degrades to pure-Python rule-based advisor if ANTHROPIC_API_KEY is missing or API fails.
     """
     return get_ai_advice(req)
+
+
+# ---------------------------------------------------------------------------
+# Tracking + continuous monitoring
+# ---------------------------------------------------------------------------
+
+@app.on_event("startup")
+def _start_monitor() -> None:
+    """Load the tracked set and begin scheduled screening."""
+    monitor.start()
+
+
+@app.on_event("shutdown")
+def _stop_monitor() -> None:
+    monitor.stop()
+
+
+@app.get("/api/tracking/objects", tags=["Tracking"])
+def tracking_objects() -> Dict[str, Any]:
+    """
+    The catalogue the console tracks, as raw element sets.
+
+    The frontend renders these and propagates them in-browser for smooth
+    animation. It does not choose them — that is what keeps the globe and the
+    event list describing the same objects.
+
+    `source` says where the data came from and MUST be surfaced: showing cached
+    or stale element sets as live is the same class of dishonesty as inventing
+    a number.
+    """
+    # Never a live fetch on the request thread: refreshing the set is the
+    # monitor's job, and blocking here once outlasted the browser's own timeout.
+    snap = tracked_set.load_for_request()
+    return {
+        "objects": [o.as_wire() for o in snap.objects],
+        "count": snap.count,
+        "groups": snap.groups,
+        "source": snap.source,
+        "fetched_at_unix": snap.fetched_at,
+        # Element sets that would not parse never reached the pipeline, so they
+        # cannot show up as "no conjunction found". They are named instead.
+        "rejected": snap.rejected,
+        "error": snap.error,
+    }
+
+
+@app.get("/api/monitoring/status", tags=["Tracking"])
+def monitoring_status() -> Dict[str, Any]:
+    """
+    State of the scheduled screening, without the events themselves.
+
+    Cheap enough to poll. Note this reports the PHYSICS pipeline's schedule —
+    no AI is involved in producing or triggering these runs.
+    """
+    run = monitor.current
+    return {
+        "state": run.state,
+        "started_at_unix": run.started_at,
+        "finished_at_unix": run.finished_at,
+        "duration_s": run.duration_s,
+        "window_start_utc_iso": run.window_start_utc_iso,
+        "window_hours": run.window_hours,
+        "objects_tracked": run.objects_tracked,
+        "event_count": len(run.events),
+        "high_risk_count": run.high_risk_count,
+        "stats": run.stats,
+        "interval_s": MONITOR_INTERVAL_S,
+        "error": run.error,
+    }
+
+
+@app.get("/api/monitoring/events", tags=["Tracking"])
+def monitoring_events() -> Dict[str, Any]:
+    """
+    Conjunctions from the last completed screening pass.
+
+    Served from cache, so this returns instantly whatever the pipeline is doing
+    now. `stats.truncated` says whether refinement was capped — a partial
+    screening is a different claim from a complete one, and the UI must be able
+    to tell the difference.
+    """
+    run = monitor.current
+    return {
+        "state": run.state,
+        "events": run.events,
+        "event_count": len(run.events),
+        "high_risk_count": run.high_risk_count,
+        "window_start_utc_iso": run.window_start_utc_iso,
+        "window_hours": run.window_hours,
+        "finished_at_unix": run.finished_at,
+        "stats": run.stats,
+        "error": run.error,
+    }
+
+
+@app.get("/api/monitoring/alerts", tags=["Tracking"])
+def monitoring_alerts() -> Dict[str, Any]:
+    """
+    High-risk conjunctions first seen since this was last called.
+
+    Drains on read, so each alert is delivered once rather than re-firing on
+    every pass that still sees the same event.
+    """
+    pending = monitor.take_new_high_risk()
+    return {"alerts": pending, "count": len(pending)}
+
+
+@app.post("/api/monitoring/refresh", tags=["Tracking"])
+def monitoring_refresh() -> Dict[str, Any]:
+    """
+    Ask for a screening pass now.
+
+    Returns immediately. The pass runs on the monitor's own thread; poll
+    /api/monitoring/status to see it finish. This never blocks a request, which
+    matters on stage — a click that hangs the UI for minutes is worse than no
+    button at all.
+    """
+    monitor.trigger()
+    return {"triggered": True, "state": monitor.current.state}
