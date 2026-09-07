@@ -190,10 +190,87 @@ def fetch_envisat(force_refresh: bool = False) -> EarthSatellite:
     return fetch_satellite(ENVISAT_NORAD_ID, force_refresh=force_refresh)
 
 
+class InvalidTLEError(ValueError):
+    """A TLE that cannot be trusted to describe a real object."""
+
+
 def parse_tle_pair(line1: str, line2: str, name: str = "SATELLITE") -> EarthSatellite:
     """
     Parse a pair of TLE lines into a skyfield EarthSatellite object.
+
+    VALIDATES, rather than trusting the propagator to complain. Neither
+    skyfield nor sgp4 rejects malformed input here: handed the string
+    "nonsense" for both lines, they return a perfectly usable EarthSatellite
+    with catalogue number 0 and an epoch of 1999-12-31. That object propagates,
+    reports positions, and will happily produce conjunctions with real
+    satellites. A phantom object is far worse than a parse error, because
+    nothing downstream can tell it apart from a real one — which is precisely
+    the "silent fallback" CLAUDE.md 1.5 forbids.
+
+    So the obvious structural facts are checked, and anything that fails raises
+    rather than returning a plausible-looking object.
+
+    Checksums are deliberately NOT verified. Real catalogue feeds occasionally
+    carry lines with bad or stripped checksum digits that are otherwise
+    perfectly valid, and rejecting those would discard real objects to catch a
+    class of error the checks below already cover.
+
+    Args:
+        line1: TLE line 1.
+        line2: TLE line 2.
+        name:  display name for the object.
+
+    Returns:
+        A skyfield EarthSatellite.
+
+    Raises:
+        InvalidTLEError: the lines are not a usable element set.
     """
+    if not isinstance(line1, str) or not isinstance(line2, str):
+        raise InvalidTLEError(f"{name}: TLE lines must be strings")
+
+    l1, l2 = line1.rstrip(), line2.rstrip()
+
+    if not l1.startswith("1 ") or not l2.startswith("2 "):
+        raise InvalidTLEError(
+            f"{name}: TLE lines must begin with '1 ' and '2 ' "
+            f"(got {l1[:2]!r} and {l2[:2]!r})"
+        )
+
+    # Columns 3-7 carry the catalogue number on both lines.
+    if len(l1) < 69 or len(l2) < 69:
+        raise InvalidTLEError(
+            f"{name}: TLE lines are too short to be complete "
+            f"({len(l1)} and {len(l2)} characters, expected 69)"
+        )
+
+    try:
+        satnum1 = int(l1[2:7])
+        satnum2 = int(l2[2:7])
+    except ValueError as exc:
+        raise InvalidTLEError(f"{name}: catalogue number is not numeric") from exc
+
+    if satnum1 != satnum2:
+        raise InvalidTLEError(
+            f"{name}: line 1 and line 2 describe different objects "
+            f"({satnum1} vs {satnum2})"
+        )
+    if satnum1 == 0:
+        raise InvalidTLEError(f"{name}: catalogue number 0 is not a real object")
+
     ts = load.timescale()
-    return EarthSatellite(line1, line2, name, ts)
+    try:
+        sat = EarthSatellite(l1, l2, name, ts)
+    except Exception as exc:
+        raise InvalidTLEError(f"{name}: element set rejected: {exc}") from exc
+
+    # sgp4 reports an unusable element set through a nonzero error code rather
+    # than by raising.
+    error = getattr(sat.model, "error", 0)
+    if error:
+        raise InvalidTLEError(
+            f"{name}: sgp4 rejected the element set (error code {error})"
+        )
+
+    return sat
 

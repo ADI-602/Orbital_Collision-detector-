@@ -146,25 +146,62 @@ class TestVectorizedPropagation:
 # ---------------------------------------------------------------------------
 
 class TestCoarseFilter:
-    """Verify the coarse geometric filter logic."""
+    """Verify the coarse geometric filter logic.
+
+    The filter is the apogee/perigee altitude-band check only (Hoots,
+    Crawford & Roehrich 1984). It deliberately has no inclination test — see
+    the regression test at the bottom of this class for why.
+    """
 
     def test_similar_orbits_pass(self, sat_a, sat_b):
-        """Two objects in similar SSO orbits should pass the coarse filter."""
-        # sat_a (i=98.5°, ~800 km) and sat_b (i=71°, ~800 km)
-        # Inclination diff is ~27.5° which exceeds default margin (15°),
-        # but altitude bands overlap. With a wider inclination margin
-        # they should pass.
-        assert _passes_coarse_filter(sat_a, sat_b,
-                                     inclination_margin_deg=30.0)
+        """Overlapping altitude bands pass, whatever the plane difference.
+
+        sat_a (i=98.5 deg, ~800 km) and sat_b (i=71 deg, ~800 km) are the
+        Envisat / Zenith-2 element sets: 27.5 deg apart in inclination, but
+        sharing an altitude band, so they can and do conjunct.
+        """
+        assert _passes_coarse_filter(sat_a, sat_b)
 
     def test_very_different_orbits_reject(self, sat_a, sat_iss):
-        """Envisat-like (800 km SSO) vs ISS-like (400 km, 51.6°) should
-        fail on altitude if we use a tight margin, and definitely on
-        inclination."""
-        # These have very different altitudes AND inclinations.
+        """Envisat-like (~800 km) vs ISS-like (~400 km) is ruled out on
+        altitude alone: the two [perigee, apogee] bands do not overlap, so
+        the objects can never occupy the same point."""
         assert not _passes_coarse_filter(sat_a, sat_iss,
-                                         altitude_margin_km=50.0,
-                                         inclination_margin_deg=15.0)
+                                         altitude_margin_km=50.0)
+
+    def test_large_inclination_difference_is_not_a_rejection(self, sat_a, sat_b):
+        """REGRESSION. A large inclination difference must never reject a pair.
+
+        An earlier version of the filter rejected pairs more than 15 deg apart
+        in inclination. That removed this project's own validation case:
+        Envisat (98.55 deg) and the Zenith-2 fragment (71.33 deg) are 27.2 deg
+        apart, so the October 2004 conjunction was discarded before any
+        propagation and reported as no event at all.
+
+        The check is not merely too tight, it is backwards. Orbits at
+        different inclinations intersect at their relative nodes, and a large
+        plane difference is what produces a high relative velocity at
+        encounter — the Envisat pair closes at 14.78 km/s precisely because of
+        those 27 degrees. Filtering on inclination proximity preferentially
+        discards the most dangerous conjunctions.
+
+        If this test fails, an inclination check has been reintroduced. Do not
+        adjust the test; remove the check. The sound second-stage filter is
+        Hoots' orbit-path filter, which compares orbit paths rather than plane
+        orientations.
+        """
+        elem_a = _orbital_elements_from_tle(sat_a)
+        elem_b = _orbital_elements_from_tle(sat_b)
+        incl_diff = abs(elem_a["inclination_deg"] - elem_b["inclination_deg"])
+
+        assert incl_diff > 25.0, (
+            "fixture drift: this test needs a pair with a large plane "
+            f"difference, got {incl_diff:.1f} deg"
+        )
+        assert _passes_coarse_filter(sat_a, sat_b), (
+            f"pair {incl_diff:.1f} deg apart in inclination was rejected — "
+            "an inclination-proximity check has been reintroduced"
+        )
 
     def test_orbital_elements_extraction(self, sat_a):
         """Verify orbital element extraction from TLE."""

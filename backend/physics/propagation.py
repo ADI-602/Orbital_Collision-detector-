@@ -18,6 +18,8 @@ Units used throughout:
 from dataclasses import dataclass
 
 import numpy as np
+
+from .trace import trace
 from skyfield.api import EarthSatellite, Time
 
 
@@ -96,7 +98,7 @@ def propagate(satellite: EarthSatellite, t: Time) -> StateVectorTEME:
     # Log intermediate values so a bad number is traceable to this stage.
     r_km = np.linalg.norm(state.pos_teme_km)
     v_km_s = np.linalg.norm(state.vel_teme_km_s)
-    print(
+    trace(
         f"[propagation] {satellite.name} @ {t.utc_iso()} | "
         f"|r|={r_km:.3f} km  |v|={v_km_s:.4f} km/s  (TEME)"
     )

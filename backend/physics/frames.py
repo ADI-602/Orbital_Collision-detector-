@@ -30,6 +30,7 @@ from skyfield.api import EarthSatellite, Time, wgs84
 from skyfield.positionlib import Geocentric
 
 from .propagation import StateVectorTEME
+from .trace import trace
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +148,7 @@ def teme_to_eci(state_teme: StateVectorTEME, satellite: EarthSatellite) -> State
     )
 
     r_km = np.linalg.norm(pos_eci_km)
-    print(
+    trace(
         f"[frames] TEME->ECI  {state_teme.satellite_name!r} @ {t.utc_iso()} | "
         f"|r_eci|={r_km:.3f} km"
     )
@@ -182,7 +183,7 @@ def teme_to_ecef(state_teme: StateVectorTEME, satellite: EarthSatellite) -> Stat
     )
 
     r_km = np.linalg.norm(pos_ecef_km)
-    print(
+    trace(
         f"[frames] TEME->ECEF {state_teme.satellite_name!r} @ {t.utc_iso()} | "
         f"|r_ecef|={r_km:.3f} km"
     )
@@ -222,7 +223,7 @@ def ecef_to_geodetic(state_ecef: StateVectorECEF, satellite: EarthSatellite) -> 
         satellite_name=state_ecef.satellite_name,
     )
 
-    print(
+    trace(
         f"[frames] Geodetic   {state_ecef.satellite_name!r} @ {t.utc_iso()} | "
         f"lat={lat_deg:.4f}°  lon={lon_deg:.4f}°  alt={alt_km:.2f} km"
     )

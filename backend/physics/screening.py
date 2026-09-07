@@ -1,13 +1,23 @@
 """
 screening.py — Conjunction screening: coarse filter + fine propagation.
 
-Given a primary satellite and a set of candidates, identifies pairs with
-close approaches within an analysis window. Implements a two-stage filter:
+Given a primary satellite and a set of candidates — or a whole tracked set to
+screen against itself — identifies pairs with close approaches within an
+analysis window. Filtering is staged, cheapest first:
 
-  Stage 1 (coarse):  Cheap TLE-parameter checks (altitude bands, inclination)
-                     to rule out geometrically impossible conjunctions.
-  Stage 2 (fine):    Vectorized propagation at 60-second timesteps across the
-                     analysis window; flag pairs with separation < threshold.
+  Stage 1 (geometric): apogee/perigee altitude band overlap. Rules out pairs
+                       that cannot possibly come close, with no propagation.
+  Stage 2 (sampled):   propagate every object ONCE over the window, then take
+                       pairwise separations on the cached ephemerides
+                       (screen_all_pairs). Reduces N-squared propagations to N.
+  Stage 3 (fine):      screen_pair on the survivors — de-aliased local-minimum
+                       refinement, which is what actually produces a reported
+                       minimum separation.
+
+Stage 2 is a GATE, never an answer. Its sampled minimum is an upper bound on
+the true minimum, and on a 60 s grid it has been measured to overstate a real
+approach by up to 2.8x (7.301 km sampled against 2.643 km true). Only stage 3
+output is a separation this module will report.
 
 This module does NOT compute Pc — it identifies *candidates* for deeper
 analysis by tca.py and collision_probability.py.
@@ -123,22 +133,43 @@ def _passes_coarse_filter(
     primary: EarthSatellite,
     secondary: EarthSatellite,
     altitude_margin_km: float = 100.0,
-    inclination_margin_deg: float = 15.0,
 ) -> bool:
     """
     Cheap geometric check: can these two objects' orbits possibly intersect?
 
-    Checks:
-      1. Altitude band overlap: do the [perigee, apogee] bands overlap
-         within a margin? If not, the orbits can never come close.
-      2. Inclination proximity: if inclinations differ by more than a margin,
-         the orbital planes are too different for a conjunction.
+    This is the apogee/perigee filter — the first of the three filters in
+    Hoots, Crawford & Roehrich (1984), "An analytic method to determine future
+    close approaches between satellites", Celestial Mechanics 33, 143-158. If
+    the two [perigee, apogee] altitude bands do not overlap, the objects can
+    never occupy the same point, so no propagation is needed to rule the pair
+    out. That is a true necessary condition, which is what makes discarding
+    the pair safe.
+
+    ------------------------------------------------------------------
+    THERE IS DELIBERATELY NO INCLINATION CHECK. An earlier version rejected
+    pairs whose inclinations differed by more than 15 degrees. That is not a
+    conservative filter, it is a wrong one: two orbits at different
+    inclinations intersect at their relative nodes, and a large plane
+    difference is precisely what produces a high relative velocity at
+    encounter — i.e. the most dangerous conjunctions, not the least.
+
+    It removed this project's own validation case. Envisat (i = 98.55 deg) and
+    the Zenith-2 fragment (i = 71.33 deg) differ by 27.2 deg, so the pair was
+    rejected before any propagation and the October 2004 conjunction — whose
+    14.78 km/s closing speed comes from exactly that plane difference — was
+    reported as no event at all.
+
+    Do not reintroduce an inclination-proximity check. If a second filter
+    stage is wanted, the sound one is Hoots' orbit-path filter, which computes
+    the true minimum distance between the two orbit paths rather than
+    comparing plane orientations.
+    ------------------------------------------------------------------
 
     Args:
-        primary:                the primary satellite.
-        secondary:              the candidate object.
-        altitude_margin_km:     margin for altitude band overlap [km].
-        inclination_margin_deg: maximum inclination difference [degrees].
+        primary:            the primary satellite.
+        secondary:          the candidate object.
+        altitude_margin_km: margin for altitude band overlap [km]. Widens both
+                            bands, so a larger value rejects fewer pairs.
 
     Returns:
         True if the pair passes the coarse filter (may have a conjunction).
@@ -147,7 +178,6 @@ def _passes_coarse_filter(
     elem1 = _orbital_elements_from_tle(primary)
     elem2 = _orbital_elements_from_tle(secondary)
 
-    # Check 1: altitude band overlap
     band1_lo = elem1["perigee_alt_km"] - altitude_margin_km
     band1_hi = elem1["apogee_alt_km"] + altitude_margin_km
     band2_lo = elem2["perigee_alt_km"] - altitude_margin_km
@@ -161,19 +191,9 @@ def _passes_coarse_filter(
         )
         return False
 
-    # Check 2: inclination proximity
-    incl_diff = abs(elem1["inclination_deg"] - elem2["inclination_deg"])
-    if incl_diff > inclination_margin_deg:
-        logger.debug(
-            "Coarse filter REJECT (inclination): %s (%.2f°) vs %s (%.2f°), diff=%.2f°",
-            primary.name, elem1["inclination_deg"],
-            secondary.name, elem2["inclination_deg"], incl_diff,
-        )
-        return False
-
     logger.debug(
-        "Coarse filter PASS: %s vs %s  (alt overlap, incl diff=%.2f°)",
-        primary.name, secondary.name, incl_diff,
+        "Coarse filter PASS: %s vs %s (altitude bands overlap)",
+        primary.name, secondary.name,
     )
     return True
 
@@ -445,8 +465,9 @@ def screen_candidates(
     Screen a primary object against a list of candidates for conjunctions.
 
     Two-stage process:
-      1. Coarse geometric filter (altitude/inclination) — cheap, rules out
-         most pairs without propagation.
+      1. Coarse geometric filter (apogee/perigee altitude band overlap) —
+         cheap, rules out pairs that cannot possibly come close, with no
+         propagation.
       2. Fine propagation scan — vectorized SGP4 at 60s timesteps for
          surviving pairs.
 
@@ -506,3 +527,286 @@ def screen_candidates(
     )
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# All-pairs screening (cached ephemerides)
+# ---------------------------------------------------------------------------
+
+def _cache_ephemerides(
+    objects: list[EarthSatellite], t_array: Time,
+) -> tuple[np.ndarray, np.ndarray, list[int]]:
+    """
+    Propagate every object once over the sample grid.
+
+    This is the whole point of the all-pairs path. ``screen_pair`` propagates
+    BOTH of its objects on every call, so screening one primary against N
+    candidates propagates the primary N times, and screening a set against
+    itself costs O(N^2) propagations for O(N) objects' worth of information.
+    Propagating once and reusing the arrays makes the pairwise stage pure
+    arithmetic.
+
+    An object whose element set the propagator rejects is dropped and its index
+    omitted, rather than being filled with zeros — a zero position is a point at
+    the centre of the Earth, and would read as a spectacularly close approach
+    with everything else in the set.
+
+    Args:
+        objects: catalogue objects to propagate.
+        t_array: array-valued skyfield Time (the shared sample grid).
+
+    Returns:
+        (pos_teme_km, vel_teme_km_s, kept_indices), where the arrays have shape
+        (len(kept_indices), len(t_array), 3) and kept_indices maps a row back to
+        its position in `objects`.
+    """
+    n_steps = len(t_array.tt)
+    pos = np.empty((len(objects), n_steps, 3), dtype=float)
+    vel = np.empty((len(objects), n_steps, 3), dtype=float)
+    kept: list[int] = []
+
+    for i, sat in enumerate(objects):
+        try:
+            p, v = propagate_batch_teme(sat, t_array)
+        except Exception as exc:
+            logger.warning(
+                "screen_all_pairs: dropping %s - propagation failed: %s",
+                sat.name, exc,
+            )
+            continue
+        if not (np.all(np.isfinite(p)) and np.all(np.isfinite(v))):
+            logger.warning(
+                "screen_all_pairs: dropping %s - propagation produced "
+                "non-finite values (decayed or unusable element set)",
+                sat.name,
+            )
+            continue
+        row = len(kept)
+        pos[row] = p
+        vel[row] = v
+        kept.append(i)
+
+    return pos[: len(kept)], vel[: len(kept)], kept
+
+
+def _gate_pairs(
+    pos: np.ndarray,
+    vel: np.ndarray,
+    timestep_s: float,
+    threshold_km: float,
+    block: int = 40,
+) -> list[tuple[float, int, int]]:
+    """
+    Every pair that could hide a close approach, from the cached ephemerides.
+
+    THE SAMPLED MINIMUM IS NOT THE ANSWER. A sharp encounter passes entirely
+    between two samples — the same aliasing ``screen_pair`` exists to de-alias.
+    On a 60 s grid this has been measured overstating a real approach by 2.8x
+    (7.301 km sampled against 2.643 km true). So this computes a rigorous LOWER
+    BOUND on the true minimum and gates on that; the caller must still refine
+    every survivor to get a number worth reporting.
+
+    THE BOUND, PER SAMPLE INTERVAL. Over one interval [t_k, t_k+1] of length
+    dt, separation s(t) obeys |s'| <= |dv|, so s is bounded below by the two
+    one-sided cones from each endpoint. Their crossing point gives
+
+        s_min(interval) >= (s_k + s_k+1 - V*dt) / 2
+
+    where V bounds |dv| across the interval. |dv| itself moves no faster than
+    the relative gravitational acceleration allows, so
+
+        V = max(|dv_k|, |dv_k+1|) + A*dt/2,   A = mu/r1_min^2 + mu/r2_min^2
+
+    with each r_min taken from that object's own cached track. Both steps are
+    inequalities in the safe direction, so a pair discarded here provably
+    cannot reach the threshold.
+
+    WHY PER INTERVAL AND NOT GLOBALLY. An earlier version took the global
+    minimum separation and the global maximum relative speed and combined them.
+    Those occur at completely different instants — a pair's fastest crossing is
+    usually nowhere near its closest pass — so the bound was wildly pessimistic
+    and 30% of all pairs passed the gate, which put the expensive refinement
+    stage hours away from finishing. Evaluating the bound interval by interval
+    only ever pairs a separation with the speed actually in force at the same
+    time.
+
+    Blocked so the (block, block, n_steps, 3) temporary stays bounded however
+    many objects were handed in.
+
+    Args:
+        pos:          (N, T, 3) cached positions [km], all in one frame.
+        vel:          (N, T, 3) cached velocities [km/s], same frame.
+        timestep_s:   spacing of the sample grid [seconds].
+        threshold_km: separation of interest [km].
+        block:        objects per block.
+
+    Returns:
+        [(lower_bound_km, i, j), ...] with i < j, ascending by bound. The bound
+        may be negative — that means "could reach zero", not a real distance.
+    """
+    n = pos.shape[0]
+    dt = timestep_s
+    half_dt = dt / 2.0
+    survivors: list[tuple[float, int, int]] = []
+
+    if n < 2 or pos.shape[1] < 2:
+        return survivors
+
+    # Per-object bound on gravitational acceleration, from its own closest
+    # approach to the geocentre over the window. Larger for a lower orbit,
+    # which is the correct direction.
+    r_min = np.linalg.norm(pos, axis=2).min(axis=1)          # (N,)
+    accel_max = _MU_EARTH_KM3_S2 / np.square(r_min)          # (N,) [km/s^2]
+
+    for a in range(0, n, block):
+        pa, va = pos[a : a + block], vel[a : a + block]
+        aa = accel_max[a : a + block]
+        for b in range(a, n, block):
+            pb, vb = pos[b : b + block], vel[b : b + block]
+            ab = accel_max[b : b + block]
+
+            # (ba, bb, T)
+            sep = np.linalg.norm(pa[:, None, :, :] - pb[None, :, :, :], axis=-1)
+            rel = np.linalg.norm(va[:, None, :, :] - vb[None, :, :, :], axis=-1)
+
+            # Relative acceleration bound for each pair, (ba, bb, 1).
+            accel_pair = (aa[:, None] + ab[None, :])[:, :, None]
+
+            # Speed bound in force across each interval, (ba, bb, T-1).
+            speed_bound = np.maximum(rel[:, :, :-1], rel[:, :, 1:]) + accel_pair * half_dt
+
+            # Lower bound on the true minimum within each interval.
+            interval_bound = (sep[:, :, :-1] + sep[:, :, 1:] - speed_bound * dt) / 2.0
+            pair_bound = interval_bound.min(axis=2)
+
+            for bi, bj in np.argwhere(pair_bound < threshold_km):
+                i, j = a + int(bi), b + int(bj)
+                # Each unordered pair once, and never an object with itself.
+                if j <= i:
+                    continue
+                survivors.append((float(pair_bound[bi, bj]), i, j))
+
+    survivors.sort()
+    return survivors
+
+
+def screen_all_pairs(
+    objects: list[EarthSatellite],
+    start_time: Time,
+    end_time: Time,
+    timestep_s: float = 60.0,
+    threshold_km: float = 5.0,
+    window_margin_s: float = 300.0,
+    max_refine_pairs: int | None = None,
+) -> tuple[list[ConjunctionCandidate], dict]:
+    """
+    Screen a tracked set against itself for close approaches.
+
+    ``screen_candidates`` answers "what comes near THIS object". This answers
+    "what comes near anything", which is both what an operator actually watches
+    and what makes a populated event list possible: one primary against a few
+    hundred candidates over 24 h typically finds nothing at all, because a
+    sub-5 km approach to one specific object is rare. The same set screened
+    against itself has N^2/2 chances instead of N.
+
+    Staged so the expensive work only ever runs on a handful of pairs:
+
+      1. ``_cache_ephemerides`` - one propagation per object, not per pair.
+      2. ``_gate_pairs``        - vectorised sampled separations with a
+                                  provably-safe gate. Fast, and never an answer.
+      3. ``screen_pair``        - the validated de-aliasing refinement, run only
+                                  on survivors. Every reported separation comes
+                                  from here.
+
+    Memory is O(N * T): two (N, T, 3) float64 arrays, about 48 MB for 700
+    objects on a 24 h / 60 s grid. Scale the timestep rather than the object
+    count if that becomes a problem — but note a coarser grid widens the
+    stage-2 gate and so hands MORE pairs to stage 3, which is the expensive one.
+
+    Args:
+        objects:          the tracked set. Objects sharing a satnum are never
+                          screened against each other.
+        start_time:       start of the analysis window.
+        end_time:         end of the analysis window.
+        timestep_s:       sample grid spacing [seconds]. Default 60 s.
+        threshold_km:     separation of interest [km]. Default 5 km.
+        window_margin_s:  margin for the flagged TCA window [seconds].
+        max_refine_pairs: cap on stage-3 refinements, closest-sampled first.
+                          None refines every survivor. When set and hit, the
+                          returned stats say so — a truncated screening must
+                          never be presented as a complete one.
+
+    Returns:
+        (candidates, stats). `candidates` are real, de-aliased conjunctions
+        sorted closest first. `stats` reports what the run actually did:
+        objects_in, objects_propagated, pairs_evaluated, pairs_gated,
+        pairs_refined, truncated.
+    """
+    ts = load.timescale()
+
+    step_days = timestep_s / 86400.0
+    n_steps = max(int((end_time.tt - start_time.tt) / step_days) + 1, 2)
+    t_array = ts.tt_jd(start_time.tt + np.arange(n_steps) * step_days)
+
+    pos, vel, kept = _cache_ephemerides(objects, t_array)
+    n = len(kept)
+
+    stats = {
+        "objects_in": len(objects),
+        "objects_propagated": n,
+        "pairs_evaluated": n * (n - 1) // 2,
+        "pairs_gated": 0,
+        "pairs_refined": 0,
+        "truncated": False,
+    }
+
+    if n < 2:
+        logger.warning(
+            "screen_all_pairs: %d propagatable object(s) - nothing to screen", n,
+        )
+        return [], stats
+
+    logger.info(
+        "screen_all_pairs: %d objects x %d steps, evaluating %d pairs",
+        n, n_steps, stats["pairs_evaluated"],
+    )
+
+    gated = _gate_pairs(pos, vel, timestep_s, threshold_km)
+    stats["pairs_gated"] = len(gated)
+
+    if max_refine_pairs is not None and len(gated) > max_refine_pairs:
+        # Surfaced, never silent: a truncated screening is a different claim
+        # from a complete one, and the UI must be able to say which it got.
+        logger.warning(
+            "screen_all_pairs: %d pairs passed the gate, refining the closest "
+            "%d - results are NOT a complete screening of the set",
+            len(gated), max_refine_pairs,
+        )
+        gated = gated[:max_refine_pairs]
+        stats["truncated"] = True
+
+    results: list[ConjunctionCandidate] = []
+    for _sampled_km, i, j in gated:
+        primary = objects[kept[i]]
+        secondary = objects[kept[j]]
+        if primary.model.satnum == secondary.model.satnum:
+            continue
+
+        candidate = screen_pair(
+            primary, secondary, start_time, end_time,
+            timestep_s=timestep_s,
+            threshold_km=threshold_km,
+            window_margin_s=window_margin_s,
+        )
+        stats["pairs_refined"] += 1
+        if candidate is not None:
+            results.append(candidate)
+
+    results.sort(key=lambda c: c.min_separation_km)
+
+    logger.info(
+        "screen_all_pairs: %d conjunction(s) from %d gated / %d evaluated pairs",
+        len(results), stats["pairs_gated"], stats["pairs_evaluated"],
+    )
+
+    return results, stats
