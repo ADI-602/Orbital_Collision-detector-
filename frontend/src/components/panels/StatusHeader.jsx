@@ -25,16 +25,33 @@ function backendChip(health) {
 }
 
 /**
+ * The two views, and what distinguishes them. The replay carries a permanent
+ * "2004" marker because everything in it is historical: a viewer glancing at
+ * the tab must never have to work out whether they are looking at live orbits.
+ */
+const VIEWS = [
+  { key: 'console', label: 'Live console', note: null },
+  { key: 'replay', label: 'Envisat replay', note: '2004' },
+]
+
+/**
  * Console top bar: identity, view tabs, UTC clock, system status.
  *
  * Takes health as a prop rather than calling the hook itself, so polling
- * happens exactly once in Console and the offline banner reads the same
- * state this chip does.
+ * happens exactly once per page and the offline banner reads the same state
+ * this chip does.
+ *
+ * The clock here is always real UTC now, on both views. The replay's own 2004
+ * clock is shown over its globe, never in this bar — one mission clock that
+ * silently changed epoch when you switched tabs would be a genuine hazard on
+ * stage.
  *
  * @param {object} props
  * @param {{status: string, data: object|null, error: Error|null}} props.health
+ * @param {'console'|'replay'} props.view
+ * @param {(view: string) => void} props.onChangeView
  */
-function StatusHeader({ health }) {
+function StatusHeader({ health, view = 'console', onChangeView }) {
   const clock = useMissionClock()
   const backend = backendChip(health)
 
@@ -44,20 +61,18 @@ function StatusHeader({ health }) {
         <span className="status-header__wordmark">ORBITAL RISK ADVISOR</span>
 
         <nav className="status-header__tabs">
-          <span className="status-header__tab is-active">Live console</span>
-          {/*
-            Disabled rather than hidden: the Envisat replay is the system's
-            correctness proof and deserves a visible slot in the information
-            architecture. It is marked unavailable because it genuinely is —
-            a tab that looked live but did nothing would be worse than none.
-          */}
-          <span
-            className="status-header__tab is-disabled"
-            title="Historical Envisat 2004 replay — not built yet"
-          >
-            Envisat replay
-            <span className="status-header__tab-note">soon</span>
-          </span>
+          {VIEWS.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              className={`status-header__tab${v.key === view ? ' is-active' : ''}`}
+              aria-current={v.key === view ? 'page' : undefined}
+              onClick={() => onChangeView?.(v.key)}
+            >
+              {v.label}
+              {v.note && <span className="status-header__tab-note">{v.note}</span>}
+            </button>
+          ))}
         </nav>
       </div>
 
