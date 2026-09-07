@@ -284,6 +284,16 @@ def screening_endpoint(req: ScreeningPhysicsRequest) -> Dict[str, Any]:
 def maneuver_endpoint(req: ManeuverPhysicsRequest) -> Dict[str, Any]:
     """
     Simulate impulsive collision-avoidance maneuver (ΔV) and evaluate pre/post burn miss distance and Pc.
+
+    Returns the scalars AND the sampled trajectories they came from. The tracks
+    are here rather than in the frontend because reconstructing a maneuvered
+    orbit in JavaScript would be orbital mechanics outside the validated
+    pipeline (CLAUDE.md §1.1, §1.3, §5.2) — and two lines produced by two
+    different codebases would not be comparable to each other. One TCA
+    solution, one Clohessy-Wiltshire displacement, both outputs.
+
+    `tracks.frame` names the frame ("ecef", ITRS) rather than leaving a caller
+    to assume one. Positions are kilometres.
     """
     try:
         ts = load.timescale()
@@ -311,7 +321,7 @@ def maneuver_endpoint(req: ManeuverPhysicsRequest) -> Dict[str, Any]:
             sat_mass_kg=req.sat_mass_kg,
         )
 
-        return {
+        payload: Dict[str, Any] = {
             "primary_name": man_res.primary_name,
             "secondary_name": man_res.secondary_name,
             "delta_v_cm_s": man_res.delta_v_cm_s,
@@ -323,7 +333,41 @@ def maneuver_endpoint(req: ManeuverPhysicsRequest) -> Dict[str, Any]:
             "risk_reduction_pct": man_res.risk_reduction_pct,
             "fuel_consumed_kg": man_res.fuel_consumed_kg,
             "maneuver_recommended": man_res.maneuver_recommended,
+            "tracks": None,
         }
+
+        tracks = man_res.tracks
+        if tracks is not None:
+            payload["tracks"] = {
+                "frame": tracks.frame,
+                "units": tracks.units,
+                "sample_utc_iso": tracks.sample_utc_iso,
+                "pre_burn_pos_ecef_km": tracks.pre_burn_pos_ecef_km,
+                "post_burn_pos_ecef_km": tracks.post_burn_pos_ecef_km,
+                "secondary_pos_ecef_km": tracks.secondary_pos_ecef_km,
+                "burn_utc_iso": tracks.burn_utc_iso,
+                "tca_utc_iso": tracks.tca_utc_iso,
+                "burn_sample_index": tracks.burn_sample_index,
+                # How far the burn moves the primary by TCA. NOT the miss
+                # distance, and not to be rendered as one: it is the size of
+                # the displacement that changes the miss distance.
+                "separation_at_tca_m": tracks.separation_at_tca_m,
+                "max_separation_m": tracks.max_separation_m,
+                "sample_step_s": tracks.sample_step_s,
+                # The arcs span an hour at a ~16 s step; at ~15 km/s closing
+                # speed they cannot resolve a few-hundred-metre approach and
+                # a caller must NOT measure one off them. The encounter itself
+                # is these three exact positions, from the refined TCA.
+                "tca_pre_burn_pos_ecef_km": tracks.tca_pre_burn_pos_ecef_km,
+                "tca_post_burn_pos_ecef_km": tracks.tca_post_burn_pos_ecef_km,
+                "tca_secondary_pos_ecef_km": tracks.tca_secondary_pos_ecef_km,
+                # A clipped window is a different claim from a complete one,
+                # exactly as with screening coverage.
+                "truncated": tracks.truncated,
+                "note": tracks.note,
+            }
+
+        return payload
     except HTTPException:
         raise
     except Exception as e:

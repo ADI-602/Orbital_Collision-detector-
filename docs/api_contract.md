@@ -269,11 +269,55 @@ Response — captured live, Oct 22 pair, defaults as above:
   "post_burn_pc": 0.00005691,
   "risk_reduction_pct": 91.36,
   "fuel_consumed_kg": 0.152,
-  "maneuver_recommended": true
+  "maneuver_recommended": true,
+  "tracks": { ... }
 }
 ```
 
 **404** — `{"detail": "Could not compute TCA for maneuver simulation."}`
+
+#### `tracks` — the flown and unflown trajectories
+
+Added so the post-burn orbit can be drawn without the frontend reconstructing
+one. Deriving a manoeuvred trajectory in JavaScript would be orbital mechanics
+outside the validated pipeline (CLAUDE.md §1.1, §1.3, §5.2), and two lines
+computed by two different codebases would not be comparable to each other.
+One TCA solution, one Clohessy-Wiltshire displacement, both outputs.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `frame` | string | `"ecef"` (ITRS). Stated, not assumed. |
+| `units` | string | `"km"` |
+| `sample_utc_iso` | string[] | 241 instants, ~16 s apart |
+| `pre_burn_pos_ecef_km` | `[x,y,z][]` | primary, coasting |
+| `post_burn_pos_ecef_km` | `[x,y,z][]` | primary, with the burn |
+| `secondary_pos_ecef_km` | `[x,y,z][]` | the other object |
+| `burn_utc_iso`, `burn_sample_index` | string, int | before this the two tracks are identical to the bit |
+| `tca_utc_iso` | string | as refined by the pipeline |
+| `separation_at_tca_m` | float | how far the burn moved the primary. **Not** the miss distance |
+| `max_separation_m` | float | largest pre/post gap in the window |
+| `sample_step_s` | float | grid spacing |
+| `tca_pre_burn_pos_ecef_km` | `[x,y,z]` | primary at TCA, exact |
+| `tca_post_burn_pos_ecef_km` | `[x,y,z]` | perturbed primary at TCA, exact |
+| `tca_secondary_pos_ecef_km` | `[x,y,z]` | secondary at TCA, exact |
+| `truncated`, `note` | bool, string\|null | window clipped at the CW validity horizon |
+
+Payload is ~50 KB.
+
+**Do not measure a miss distance off the sampled arcs.** They span an hour of
+flight at a ~16 s step, and the objects close at ~15 km/s, so the nearest
+sampled approach is kilometres away from the true one and moves with the grid
+— 7.9 km sampled against a true 268 m, on the Envisat case. Resolving a 268 m
+encounter on a uniform grid would need a millisecond step across the whole
+hour. The arcs show where the trajectories run and where they part; the
+encounter is carried exactly by the three `tca_*` positions, and the
+separations between those reproduce `pre_burn_miss_distance_m` and
+`post_burn_miss_distance_m` to floating-point equality.
+
+`truncated` is the same kind of claim as `stats.truncated` on a screening pass:
+the CW linearisation holds for about one orbit after the burn, and past that
+the along-track term grows without bound, so the window is clipped and says so
+rather than extrapolating a trajectory the model cannot assert.
 
 ### 3.6 `POST /api/ai/advise` — `main.py:303-309`
 

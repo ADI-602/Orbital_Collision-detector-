@@ -213,7 +213,23 @@ would look identical on stage and collapse under one judge's question.
    and produces conjunctions with real objects. Now validates and raises
    `InvalidTLEError`. This mattered more once we ingest hundreds of TLEs.
    **DONE.**
-4. Maneuver endpoint does not return trajectories (see §5.2). **OPEN.**
+4. Maneuver endpoint does not return trajectories (see §5.2).
+   **BACKEND DONE, DRAWING OPEN.** `/api/physics/maneuver` now returns
+   `tracks`: the primary's coasting arc, its post-burn arc, and the secondary,
+   sampled in ECEF from one TCA solution and one Clohessy-Wiltshire
+   displacement — so a drawn line cannot contradict a reported number. The two
+   arcs are identical to the bit before the burn instant, and the window is
+   clipped at the CW validity horizon (~1 orbit) rather than extrapolating.
+
+   **Measured, and it changes how this can be drawn:** the burn separates the
+   two trajectories by 389 m at TCA and 538 m at most, across a 29,425 km arc
+   — about 1:55,000. At globe scale the two lines are the same line, by a wide
+   margin. "Different colour so the effect is visible" cannot be satisfied by
+   drawing two orbit-scale tracks; the effect lives at the encounter, so the
+   encounter has to be the thing shown. The sampled arcs also cannot resolve
+   it (7.9 km sampled against a true 268 m at a ~16 s step and 15 km/s), which
+   is why the exact TCA positions are carried separately and why a miss
+   distance must never be measured off the arcs.
 5. ~~Orbit tracks are not rendered at all yet — only point markers.~~ **DONE.**
    Selecting an event draws one revolution of each object's orbit
    (`frontend/src/lib/orbitTrack.js`), in the event's risk colour, primary
