@@ -57,6 +57,16 @@ data/
 tle_cache/
 celestrak_cache/
 
+# ...with ONE deliberate exception. The server's offline tracked set is
+# committed on purpose: CelesTrak is a third party we do not control, and a
+# blocked IP or venue wifi must not empty the console during a live demo.
+# It is a capped subset (see scripts/refresh_tracked_set.py), not a catalogue
+# dump, and it holds real unmodified element sets labelled with their epoch.
+# Git cannot re-include a file whose parent directory is excluded, so the
+# directory is un-ignored first.
+!backend/data/
+!backend/data/offline_tracked_set.json
+
 # ------------------------------------------------------------
 # Node / Frontend
 # ------------------------------------------------------------

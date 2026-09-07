@@ -1,0 +1,18 @@
+{
+  "_comment": [
+    "Offline fallback for the server's tracked set. REAL, UNMODIFIED TLEs.",
+    "Used only when CelesTrak cannot be reached, so the console still has a",
+    "genuine set to track and screen with no network at all.",
+    "Regenerate with: python scripts/refresh_tracked_set.py",
+    "This seed holds only the 4 objects that were already committed in",
+    "frontend/src/lib/tleSnapshot.js. It is enough to prove the fallback",
+    "works and NOT enough to produce a populated event list -- replace it",
+    "with a debris-rich set from the refresh script before the demo."
+  ],
+  "captured_utc": "2026-08-30T00:00:00Z",
+  "groups": [
+    "stations"
+  ],
+  "object_count": 4,
+  "tle_text": "ISS (ZARYA)\n1 25544U 98067A   26242.49847866  .00005671  00000+0  11126-3 0  9990\n2 25544  51.6316 292.2906 0005027  90.0365 270.1200 15.48938909583274\nPOISK\n1 36086U 09060A   26242.49847866  .00005671  00000+0  11126-3 0  9998\n2 36086  51.6316 292.2906 0005027  90.0365 270.1200 15.48938909583963\nCSS (TIANHE)\n1 48274U 21035A   26242.40883656  .00019520  00000+0  24340-3 0  9994\n2 48274  41.4676 231.4402 0001913 255.2624 104.8002 15.59424488304755\nISS (NAUKA)\n1 49044U 21066A   26242.49847866  .00005671  00000+0  11126-3 0  9996\n2 49044  51.6316 292.2906 0005027  90.0365 270.1200 15.48938909584007"
+}
