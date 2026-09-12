@@ -4,6 +4,7 @@ import {
   computeCountdown,
   describeCountdown,
   formatCountdown,
+  resolveClockBasis,
   toEpochMs,
 } from './countdown.js'
 
@@ -172,5 +173,22 @@ describe('describeCountdown', () => {
 
   it('states plainly when no TCA exists', () => {
     expect(describeCountdown(null)).toBe('No time of closest approach computed')
+  })
+})
+
+describe('resolveClockBasis', () => {
+  it('reports the supplied label when a clock was actually supplied', () => {
+    expect(resolveClockBasis(true, 'replay clock \u00d760')).toBe('replay clock \u00d760')
+  })
+
+  it('falls back to a generic simulated label when driven without one', () => {
+    expect(resolveClockBasis(true)).toBe('simulated clock')
+  })
+
+  it('reports real time when undriven, DISCARDING a simulated label', () => {
+    // The regression: an undriven countdown captioned with a replay clock it
+    // is not counting against. The label must never win over the truth.
+    expect(resolveClockBasis(false, 'replay clock \u00d760')).toBe('real-time UTC')
+    expect(resolveClockBasis(false)).toBe('real-time UTC')
   })
 })

@@ -93,7 +93,7 @@ function ClockIcon() {
  * `onTelemetry` — that is why satellite positions live in React state here
  * but are updated a few times a second rather than every frame.
  */
-function Console() {
+function Console({ onViewChange }) {
   const health = useHealth()
   const {
     count,
@@ -122,7 +122,7 @@ function Console() {
   return (
     <div className="console">
       <div className="console__header">
-        <StatusHeader health={health} />
+        <StatusHeader health={health} view="console" onViewChange={onViewChange} />
       </div>
 
       {health.status === 'offline' && (

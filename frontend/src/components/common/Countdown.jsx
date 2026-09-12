@@ -1,4 +1,5 @@
 import { useCountdown } from '../../hooks/useCountdown.js'
+import { resolveClockBasis } from '../../lib/countdown.js'
 import { formatSimClock } from '../../lib/simClock.js'
 import ErrorState from './ErrorState.jsx'
 import './Countdown.css'
@@ -28,7 +29,9 @@ import './Countdown.css'
  * @param {'accent'|'nominal'|'watch'|'critical'} [props.tone]  from the event's
  *   threat level — never derived from how little time is left
  * @param {string} [props.emptyHint]  prose shown when there is no TCA
- * @param {string} [props.basisLabel] override for the time-basis caption
+ * @param {string} [props.basisLabel] label for the supplied clock. Ignored
+ *   when no `nowUtc` is given: an undriven countdown always reports the real
+ *   clock it is actually counting against.
  */
 function Countdown({
   targetUtc = null,
@@ -56,7 +59,7 @@ function Countdown({
     )
   }
 
-  const basis = basisLabel ?? (isDriven ? 'simulated clock' : 'real-time UTC')
+  const basis = resolveClockBasis(isDriven, basisLabel)
 
   return (
     <div className={`countdown countdown--${tone}`}>

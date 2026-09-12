@@ -1,0 +1,124 @@
+.pc-trend {
+  position: relative;
+  width: 100%;
+}
+
+.pc-trend__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* Published band: a region the eye should read as context, not as a series. */
+.pc-trend__band {
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.pc-trend__grid {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 1;
+}
+
+/* The operational threshold is a risk statement from the source paper, so it
+   is the one mark that legitimately wears a risk token. */
+.pc-trend__threshold {
+  stroke: var(--risk-critical);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  opacity: 0.8;
+}
+
+.pc-trend__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.pc-trend__dot {
+  fill: var(--accent);
+  /* 2px surface ring so a dot stays legible where it overlaps the band. */
+  stroke: var(--bg-deep);
+  stroke-width: 2;
+  transition: r 0.12s ease;
+}
+
+.pc-trend__tick,
+.pc-trend__day,
+.pc-trend__lead,
+.pc-trend__annot,
+.pc-trend__value {
+  font-family: var(--font-sans);
+  fill: var(--text-dim);
+}
+
+.pc-trend__tick {
+  font-size: 9px;
+  text-anchor: end;
+  font-family: var(--font-mono);
+}
+
+.pc-trend__day {
+  font-size: 10px;
+  fill: var(--text-secondary);
+}
+
+.pc-trend__lead {
+  font-size: 9px;
+  fill: var(--text-faint);
+}
+
+.pc-trend__annot {
+  font-size: 9px;
+  fill: var(--text-faint);
+}
+
+.pc-trend__annot--threshold {
+  fill: var(--risk-critical);
+  opacity: 0.85;
+}
+
+/* Values wear a text token, never the series colour. */
+.pc-trend__value {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  fill: var(--text-primary);
+}
+
+.pc-trend__hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.pc-trend__tip {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-inner);
+  background: rgba(10, 10, 10, 0.96);
+  border: 1px solid var(--card-border-hover);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.pc-trend__tip-day {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.pc-trend__tip-pc {
+  font-size: var(--fs-caption);
+}

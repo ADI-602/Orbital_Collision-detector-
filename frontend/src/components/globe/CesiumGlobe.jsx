@@ -5,6 +5,18 @@ import { computeSimTime, DEFAULT_SPEED_MULTIPLIER } from '../../lib/simClock.js'
 import './CesiumGlobe.css'
 
 /**
+ * Conjunction-line colours, mirroring the tokens in styles/tokens.css —
+ * Cesium paints on a canvas and cannot read a CSS custom property. Keep these
+ * in step with --accent and the --risk-* scale.
+ */
+const LINK_COLORS = {
+  accent: '#5fd9d0',
+  nominal: '#4ade80',
+  watch: '#fbbf24',
+  critical: '#f43f5e',
+}
+
+/**
  * CesiumGlobe — the console's hero view: a freely rotatable Earth with real
  * tracked objects in their real orbits.
  *
@@ -20,6 +32,16 @@ import './CesiumGlobe.css'
  * @param {(when: Date) => Array<object>} props.propagateAll
  * @param {number} props.satelliteCount           re-seeds entities when the set loads
  * @param {number} [props.speedMultiplier]
+ * @param {(() => Date | null) | null} [props.getSimTime]  external clock. When
+ *   supplied the globe stops keeping time and renders whatever instant this
+ *   returns, so a view that also shows a countdown has exactly one clock
+ *   behind both. Omit it and the globe runs its own live clock, which is what
+ *   the console does.
+ * @param {[string, string] | null} [props.linkIds]  draw a line between these
+ *   two object ids — the conjunction pair
+ * @param {'accent'|'nominal'|'watch'|'critical'} [props.linkTone]  colour for
+ *   that line. Supplied by the caller from the pipeline's threat_level; the
+ *   globe never infers risk from geometry it drew itself.
  * @param {(t: {simTime: Date, satellites: Array<object>}) => void} [props.onTelemetry]
  * @param {(id: string | null) => void} [props.onSelect]
  * @param {string | null} [props.selectedId]
@@ -28,6 +50,9 @@ function CesiumGlobe({
   propagateAll,
   satelliteCount,
   speedMultiplier = DEFAULT_SPEED_MULTIPLIER,
+  getSimTime = null,
+  linkIds = null,
+  linkTone = 'accent',
   onTelemetry,
   onSelect,
   selectedId = null,
@@ -42,6 +67,12 @@ function CesiumGlobe({
   propagateRef.current = propagateAll
   const speedRef = useRef(speedMultiplier)
   speedRef.current = speedMultiplier
+  const clockRef = useRef(getSimTime)
+  clockRef.current = getSimTime
+  const linkRef = useRef(linkIds)
+  linkRef.current = linkIds
+  const linkToneRef = useRef(linkTone)
+  linkToneRef.current = linkTone
   const telemetryRef = useRef(onTelemetry)
   telemetryRef.current = onTelemetry
   const selectRef = useRef(onSelect)
@@ -144,6 +175,11 @@ function CesiumGlobe({
     let lastPush = 0
     const startedAtReal = performance.now()
     const simBase = new Date()
+    // Both live and die with this effect run, so they are locals rather than
+    // refs: nothing outside the loop reads them, and the cleanup below closes
+    // over exactly the objects the loop used.
+    const positions = new Map()
+    let linkEntity = null
 
     const tick = () => {
       frame = requestAnimationFrame(tick)
@@ -151,8 +187,10 @@ function CesiumGlobe({
       const viewer = viewerRef.current
       if (!viewer || viewer.isDestroyed()) return
 
-      const elapsed = performance.now() - startedAtReal
-      const simTime = computeSimTime(simBase, elapsed, speedRef.current)
+      // An external clock wins outright; otherwise keep our own live time.
+      const simTime =
+        clockRef.current?.() ??
+        computeSimTime(simBase, performance.now() - startedAtReal, speedRef.current)
       const satellites = propagateRef.current?.(simTime) ?? []
 
       for (const sat of satellites) {
@@ -194,11 +232,44 @@ function CesiumGlobe({
           entity.position = position
         }
 
+        positions.set(sat.id, position)
+
         const isSelected = selectedRef.current === sat.id
         entity.point.pixelSize = isSelected ? 11 : 6
         entity.point.color = Cesium.Color.fromCssColorString(
           isSelected ? '#5fd9d0' : '#e4e4e7',
         )
+      }
+
+      // The conjunction line: a segment between the two objects the pipeline
+      // flagged. Positions come from a CallbackProperty so Cesium re-reads
+      // them every frame without the entity being rebuilt.
+      const link = linkRef.current
+      if (link) {
+        if (!linkEntity) {
+          linkEntity = viewer.entities.add({
+            polyline: {
+              positions: new Cesium.CallbackProperty(() => {
+                const [a, b] = linkRef.current ?? []
+                const pa = positions.get(a)
+                const pb = positions.get(b)
+                return pa && pb ? [pa, pb] : []
+              }, false),
+              width: 1.6,
+              arcType: Cesium.ArcType.NONE,
+              material: Cesium.Color.fromCssColorString(LINK_COLORS[linkToneRef.current] ?? LINK_COLORS.accent),
+            },
+          })
+        }
+        // Hidden rather than removed while a position is missing: an empty
+        // positions array makes Cesium log per frame.
+        const [a, b] = link
+        linkEntity.show = positions.has(a) && positions.has(b)
+        linkEntity.polyline.material = Cesium.Color.fromCssColorString(
+          LINK_COLORS[linkToneRef.current] ?? LINK_COLORS.accent,
+        )
+      } else if (linkEntity) {
+        linkEntity.show = false
       }
 
       // Throttle React updates: the HUD only needs a few refreshes a second,
@@ -211,7 +282,17 @@ function CesiumGlobe({
     }
 
     frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
+    return () => {
+      cancelAnimationFrame(frame)
+      // The viewer outlives this effect (it is created once), so the line has
+      // to be dropped explicitly or a re-seed would leave a second one behind.
+      const viewer = viewerRef.current
+      if (linkEntity && viewer && !viewer.isDestroyed()) {
+        viewer.entities.remove(linkEntity)
+      }
+      linkEntity = null
+      positions.clear()
+    }
   }, [satelliteCount])
 
   return <div className="cesium-globe" ref={containerRef} />

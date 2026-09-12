@@ -195,3 +195,25 @@ export function describeCountdown(parts) {
     ? `T minus ${duration} until closest approach`
     : `T plus ${duration} since closest approach`
 }
+
+/**
+ * Which clock a countdown is counting against, as a caption.
+ *
+ * The rule this encodes: a caller-supplied label describes the clock the
+ * caller supplied, so it applies ONLY when a clock was actually supplied. An
+ * undriven countdown always reports real time, whatever label it was handed.
+ *
+ * This exists as a tested function rather than an expression in JSX because
+ * the failure it prevents already happened once: the replay's globe failed to
+ * start, stopped feeding the countdown its simulated clock, and the readout
+ * fell back to real time while still captioned "replay clock x60" — a clock
+ * labelled with a basis it was not counting against.
+ *
+ * @param {boolean} isDriven      whether an external instant was supplied
+ * @param {string} [basisLabel]   caption for that external clock
+ * @returns {string}
+ */
+export function resolveClockBasis(isDriven, basisLabel) {
+  if (!isDriven) return 'real-time UTC'
+  return basisLabel ?? 'simulated clock'
+}

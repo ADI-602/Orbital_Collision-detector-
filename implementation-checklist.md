@@ -137,10 +137,60 @@ How to use this file: check items off as they're genuinely done (validated, not 
       with a null target — screening is not wired, so there is no real TCA to
       count to yet and it shows its empty state. Wiring it to live pipeline
       output is the next item.
-- [ ] Envisat replay wired end-to-end (globe + countdown + Pc trend + AI recommendation, all live from real pipeline output)
+- [x] Envisat replay wired end-to-end — `pages/Replay.jsx`, reached from the
+      now-live "Envisat replay" tab. Loading the view fetches the scenario,
+      screens all four prediction days, simulates the burn ESA flew, and
+      requests AI advice, with no manual step. Suite now 119/119.
+      **Every number is live pipeline output**, and matches
+      `docs/validation-notes.md` §4.4 — confirmed against a running backend
+      and read back out of the rendered DOM: Oct 19 → 329.1 m / 2.74×10⁻⁴,
+      Oct 20 → 234.1 m / 1.11×10⁻³, Oct 21 → 151.8 m / 1.93×10⁻³,
+      Oct 22 → 268.9 m / 6.59×10⁻⁴, all at computed TCA 05:10:37Z
+      (published 05:10:35Z).
+      **Screening is not told where to look.** Each day is screened from its
+      own 00:00 UTC through the end of Oct 22 — 96 h for Oct 19 — rather than
+      from a window centred on the known TCA, which would make the result
+      worthless as a proof. Verified to give identical numbers at 1 h, 12 h,
+      84 h and 96 h windows; the whole four-day run takes ~2.2 s.
+      **Disagreements are shown, not smoothed.** Miss distances are checked
+      against the published 81–316 m band and Pc against 1.4–5.5×10⁻⁴, and
+      each is labelled *within* or *outside*. Three of four Pc values and one
+      miss distance fall outside, and the panel says so, with the documented
+      reason (we apply TLE-derived covariance to both objects where ESA used
+      Envisat's operational OD for the primary — conservative, biases Pc up).
+      Published constants live in one cited module, `lib/envisatGroundTruth.js`,
+      so reference material can never be mistaken for computed output.
+      **Validated by:** `tests/…` equivalents on the frontend side —
+      `lib/envisatGroundTruth.test.js` (pins the transcription against the
+      paper and the within/outside verdicts), `lib/format.test.js`,
+      `lib/geodetic.test.js`, plus a live-backend render read back from the DOM.
+      **Two things this does NOT yet confirm**, both needing an environment
+      this container cannot provide:
+        - the globe's replay rendering (two objects + the conjunction line) —
+          there is no WebGL here, so Cesium cannot construct. The rest of the
+          view was verified to work anyway with the globe failed, which is the
+          point of the next item.
+        - the AI panel's LIVE branch — no API key here, so only the
+          rule-based fallback path was exercised. The badge correctly read
+          "AI · RULE-BASED FALLBACK".
+- [x] Replay clock survives a dead globe — found while validating the above:
+      the countdown read "T+7995d" (real time to a 2004 instant) under a
+      caption that still said "replay clock ×60", because the globe owned the
+      clock and had failed to start. Time now lives in `hooks/useReplayClock.js`
+      independent of rendering, and `resolveClockBasis()` makes a caption that
+      names a clock it is not counting against structurally impossible
+      (3 regression tests in `lib/countdown.test.js`).
 - [ ] Cosmos 2221 wired as secondary/backup scenario
 
-🔒 **Gate: full Envisat demo flow must run start-to-finish without manual intervention before Phase 6 starts.**
+🔒 **Gate: full Envisat demo flow must run start-to-finish without manual
+intervention before Phase 6 starts.** ⏳ NOT YET PASSED — the flow does run
+start-to-finish unattended, but two surfaces remain unconfirmed because this
+container has neither WebGL nor an AI key. To close it, run the replay view
+once on a machine with a GPU and confirm (a) both objects and the conjunction
+line render on the globe against the replay clock, and (b) with a
+`GEMINI_API_KEY`/`GOOGLE_API_KEY` exported into the uvicorn process, the AI
+panel's badge reads "AI · live model" rather than the fallback. Nothing else
+is outstanding.
 
 > ✅ **RESOLVED (2026-08-31).** The close-approach search returned the lowest
 > *sampled* point rather than the true minimum, so a wide window missed the

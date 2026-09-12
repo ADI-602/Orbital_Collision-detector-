@@ -1,0 +1,359 @@
+/*
+ * Replay — the correctness-proof view.
+ *
+ * Laid out as a scrolling page rather than a fixed HUD grid like the console:
+ * this screen is read, not monitored. A judge works down it — framing, the
+ * four days, the encounter, then the trend, the burn and the narrative — and
+ * that reading order is the layout.
+ */
+.replay {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 340px;
+  grid-template-areas:
+    'header header header'
+    'intro  intro  intro'
+    'banner banner banner'
+    'left   stage  right'
+    'strip  strip  strip'
+    'foot   foot   foot';
+  gap: var(--space-3);
+  padding: var(--space-3);
+  min-height: 100%;
+}
+
+.replay__header { grid-area: header; }
+.replay__intro { grid-area: intro; }
+.replay__banner { grid-area: banner; }
+.replay__rail-left { grid-area: left; }
+.replay__stage { grid-area: stage; }
+.replay__rail-right { grid-area: right; }
+.replay__strip { grid-area: strip; }
+.replay__footnote { grid-area: foot; }
+
+.replay__rail-left,
+.replay__rail-right {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.replay__card { flex: none; }
+
+/* --- Scenario framing ---------------------------------------------------- */
+.replay__intro-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.replay__intro-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.replay__title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.replay__blurb {
+  margin: 0;
+  max-width: 72ch;
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* The published figures, set apart from anything the pipeline produced. */
+.replay__facts {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-inner);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--card-border);
+}
+
+.replay__facts dt {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.replay__facts dd {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.replay__facts dd.ui-readout {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+/* --- Prediction day list -------------------------------------------------- */
+.replay__days {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.replay__day {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-inner);
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+
+  &:hover { border-color: var(--card-border-hover); }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.replay__day.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.replay__day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.replay__day-label {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+}
+
+.replay__day-lead {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+.replay__day-state {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-faint);
+}
+
+.replay__day-state--error { color: var(--risk-critical); }
+
+.replay__day-nums {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: var(--fs-caption);
+}
+
+/* --- Stage ---------------------------------------------------------------- */
+.replay__stage {
+  display: flex;
+  min-height: 420px;
+}
+
+.replay__card--stage {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+.replay__hud {
+  position: absolute;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: rgba(5, 5, 5, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.replay__hud-clock {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--fs-caption);
+}
+
+.replay__hud-speed {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.replay__controls {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.replay__control {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--accent-border);
+  background: transparent;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+
+  &:hover { background: var(--accent-soft); }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+/* States plainly that the globe is a visualisation, not a measurement. */
+.replay__globe-note {
+  position: absolute;
+  right: var(--space-4);
+  top: var(--space-4);
+  margin: 0;
+  max-width: 30ch;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-inner);
+  background: rgba(5, 5, 5, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* --- Readouts ------------------------------------------------------------- */
+.replay__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.replay__readout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.replay__readout-val {
+  font-size: var(--fs-num);
+  line-height: 1.15;
+}
+
+.replay__readout-note {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.replay__detail-threat {
+  padding-top: var(--space-2);
+}
+
+/* Verdicts pair a mark with words: never colour alone, and never a tick for
+   a value that merely failed to arrive. */
+.replay__verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+}
+
+.replay__verdict-mark { font-size: 11px; }
+
+.replay__verdict--within { color: var(--risk-nominal); }
+.replay__verdict--outside { color: var(--risk-watch); }
+.replay__verdict--unknown { color: var(--text-faint); }
+
+.replay__verdict-band {
+  color: var(--text-faint);
+}
+
+.replay__empty {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* --- Bottom strip --------------------------------------------------------- */
+.replay__strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.replay__note {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.replay__footnote p {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+@media (max-width: 1280px) {
+  .replay {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'header'
+      'intro'
+      'banner'
+      'stage'
+      'left'
+      'right'
+      'strip'
+      'foot';
+  }
+
+  .replay__intro-inner { grid-template-columns: 1fr; }
+  .replay__strip { grid-template-columns: 1fr; }
+  .replay__globe-note { display: none; }
+}

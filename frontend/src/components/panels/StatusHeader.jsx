@@ -27,14 +27,17 @@ function backendChip(health) {
 /**
  * Console top bar: identity, view tabs, UTC clock, system status.
  *
- * Takes health as a prop rather than calling the hook itself, so polling
- * happens exactly once in Console and the offline banner reads the same
- * state this chip does.
+ * Takes health as a prop rather than calling the hook itself, so the page
+ * that owns the view polls exactly once and the offline banner reads the same
+ * state this chip does. Console and Replay each poll their own, which is not
+ * duplication: they are mounted exclusively, so only one poller ever runs.
  *
  * @param {object} props
  * @param {{status: string, data: object|null, error: Error|null}} props.health
+ * @param {'console'|'replay'} [props.view]  which view is showing
+ * @param {(view: 'console'|'replay') => void} [props.onViewChange]
  */
-function StatusHeader({ health }) {
+function StatusHeader({ health, view = 'console', onViewChange }) {
   const clock = useMissionClock()
   const backend = backendChip(health)
 
@@ -44,20 +47,28 @@ function StatusHeader({ health }) {
         <span className="status-header__wordmark">ORBITAL RISK ADVISOR</span>
 
         <nav className="status-header__tabs">
-          <span className="status-header__tab is-active">Live console</span>
           {/*
-            Disabled rather than hidden: the Envisat replay is the system's
-            correctness proof and deserves a visible slot in the information
-            architecture. It is marked unavailable because it genuinely is —
-            a tab that looked live but did nothing would be worse than none.
+            Two views, both live. The replay is the system's correctness proof
+            and keeps its own slot in the information architecture rather than
+            being buried inside the console.
           */}
-          <span
-            className="status-header__tab is-disabled"
-            title="Historical Envisat 2004 replay — not built yet"
+          <button
+            type="button"
+            className={`status-header__tab ${view === 'console' ? 'is-active' : ''}`}
+            onClick={() => onViewChange?.('console')}
+            aria-current={view === 'console' ? 'page' : undefined}
+          >
+            Live console
+          </button>
+          <button
+            type="button"
+            className={`status-header__tab ${view === 'replay' ? 'is-active' : ''}`}
+            onClick={() => onViewChange?.('replay')}
+            aria-current={view === 'replay' ? 'page' : undefined}
+            title="Historical Envisat 2004 conjunction, recomputed by the live pipeline"
           >
             Envisat replay
-            <span className="status-header__tab-note">soon</span>
-          </span>
+          </button>
         </nav>
       </div>
 

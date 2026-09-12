@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import * as satellite from 'satellite.js'
-
+import { buildSatrec, propagateToGeodetic } from '../lib/geodetic.js'
 import { parseTleText } from '../lib/tle.js'
 import { readCachedTle, safeLocalStorage, writeCachedTle } from '../lib/tleCache.js'
 import { SNAPSHOT_CAPTURED_UTC, TLE_SNAPSHOT_TEXT } from '../lib/tleSnapshot.js'
@@ -59,50 +58,13 @@ const FETCH_TIMEOUT_MS = 8000
  * @property {number} altitude_km
  */
 
-/**
- * Propagate one satrec to an instant and convert to geodetic coordinates.
- * Returns null when SGP4 reports a decayed or otherwise unpropagatable
- * object — a skipped marker is correct, an invented position is not.
- */
-function propagateToGeodetic(satrec, when) {
-  const pv = satellite.propagate(satrec, when)
-  if (!pv?.position) return null
-
-  const gmst = satellite.gstime(when)
-  const geo = satellite.eciToGeodetic(pv.position, gmst)
-
-  const latitude_deg = satellite.degreesLat(geo.latitude)
-  const longitude_deg = satellite.degreesLong(geo.longitude)
-  const altitude_km = geo.height
-
-  if (
-    !Number.isFinite(latitude_deg) ||
-    !Number.isFinite(longitude_deg) ||
-    !Number.isFinite(altitude_km)
-  ) {
-    return null
-  }
-
-  return { latitude_deg, longitude_deg, altitude_km }
-}
-
 /** Turn raw CelesTrak text into propagatable satrecs. */
 function buildSatrecs(text) {
   const built = []
   for (const r of parseTleText(text)) {
-    try {
-      const satrec = satellite.twoline2satrec(r.line1, r.line2)
-      // satellite.js signals a rejected element set via a nonzero error.
-      if (!satrec || satrec.error) {
-        console.warn(`[tracking] rejected TLE for ${r.name}: error=${satrec?.error}`)
-        continue
-      }
-      built.push({ id: r.noradId, name: r.name, noradId: r.noradId, satrec })
-    } catch (err) {
-      // Never swallow this: a propagator rejecting every element set looks
-      // identical to "no satellites in view".
-      console.error(`[tracking] failed to build satrec for ${r.name}:`, err)
-    }
+    const satrec = buildSatrec(r.line1, r.line2, r.name)
+    if (!satrec) continue
+    built.push({ id: r.noradId, name: r.name, noradId: r.noradId, satrec })
   }
   return built
 }

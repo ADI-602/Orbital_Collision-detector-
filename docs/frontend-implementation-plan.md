@@ -212,14 +212,19 @@ Maps to `implementation-checklist.md` Phase 5 items — work top to bottom:
 1. ~~API client (`frontend/src/api/`) + env setup + `/health` smoke test~~ ✅ **DONE**
 2. ~~Console shell + design-system components (`GlassPanel`, `RiskBadge`,
    `StatusHeader`)~~ ✅ **DONE**
-3. Cesium globe rendering static/replay TLE positions
-4. Event list + event detail wired to screening/TCA endpoints
-5. ~~T-minus countdown~~ ✅ **DONE** (`Countdown.jsx` + `useCountdown` +
-   `lib/countdown.js`, validated; currently rendered with a null target
-   because no screening result feeds it yet) + "Play Envisat Scenario"
-   driver — **still to build**
-6. AI assistant panel wired to `/api/ai/advise`, with fallback-mode badge
-7. Maneuver simulation modal wired to `/api/physics/maneuver`
+3. ~~Cesium globe rendering static/replay TLE positions~~ ✅ **DONE**
+4. ~~Event list + event detail~~ ✅ **DONE for the replay** (prediction-day
+   list + per-day detail, wired to `/api/physics/screening`). The live
+   console's own general event list is still to build.
+5. ~~T-minus countdown + "Play Envisat Scenario" driver~~ ✅ **DONE**
+   (`Countdown.jsx`, `useCountdown`, `lib/countdown.js`, and the replay's
+   play/pause/restart driving `useReplayClock`)
+6. ~~AI assistant panel wired to `/api/ai/advise`, with fallback-mode badge~~
+   ✅ **DONE** (`AiAdvisorPanel`, strict `is_fallback === false` check). The
+   follow-up chat input is not built — the panel is read-only for now.
+7. Maneuver simulation modal (delta-v slider) — **still to build**. The
+   replay already calls `/api/physics/maneuver` for the burn ESA flew and
+   renders pre/post Pc; what is missing is the interactive slider.
 8. Cosmos 2221 wired as secondary scenario
 9. Empty/loading/error states + polish pass
 
