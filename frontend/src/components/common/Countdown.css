@@ -1,0 +1,60 @@
+.countdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+/*
+ * The clock is the largest number in its panel, and mono + tabular figures
+ * keep the digits in their columns so a ticking seconds field does not shuffle
+ * the line. `ch` sizing on the sign keeps "T-" and "T+" the same width.
+ */
+.countdown__clock {
+  font-size: var(--fs-num-lg);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.countdown--accent .countdown__clock { color: var(--text-primary); }
+.countdown--nominal .countdown__clock { color: var(--risk-nominal); }
+.countdown--watch .countdown__clock { color: var(--risk-watch); }
+.countdown--critical .countdown__clock { color: var(--risk-critical); }
+
+.countdown__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.countdown__phase {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+/* The instant the clock counts to, always on screen beside it so the relative
+   readout can be checked against an absolute one. */
+.countdown__tca {
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+}
+
+/* Which clock this is counting against — real UTC or a simulated one. Small,
+   but never omitted: the globe beside it runs at x120. */
+.countdown__basis {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.countdown__empty {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+  color: var(--text-faint);
+  max-width: 34ch;
+}

@@ -115,7 +115,28 @@ How to use this file: check items off as they're genuinely done (validated, not 
       set" assumed the Envisat pair; what ships is a general live-tracking set,
       which matches the system's actual purpose (see the note below). Works with
       no Cesium Ion token via the bundled Natural Earth II imagery fallback.
-- [ ] T-minus countdown UI component
+- [x] T-minus countdown UI component — `lib/countdown.js` (pure T-minus
+      arithmetic), `hooks/useCountdown.js` (second-aligned tick), and
+      `components/common/Countdown.jsx`. 26 new vitest cases, suite now 86/86.
+      Verified in headless Chromium in all four states: it ticks against real
+      UTC (T-00:01:05 → T-00:01:00 across a 5 s virtual-time gap), holds
+      steady when driven by a supplied clock, renders an em dash with prose
+      when there is no TCA, and surfaces a malformed timestamp as an explicit
+      error rather than as "no conjunction".
+      **Three deliberate constraints**, each guarding a way a countdown can
+      overstate what the pipeline knows: (1) a zoneless ISO timestamp is
+      *rejected*, not parsed — ECMA-262 reads it as local time, which would
+      shift the countdown by the viewer's UTC offset silently; (2) the
+      absolute TCA and the clock basis (real UTC vs. simulated) are printed
+      beside the countdown, since the globe runs at ×120 and a bare relative
+      clock is unverifiable; (3) urgency colour is a caller-supplied prop
+      taken from `threat_level` — the component never reddens itself as time
+      runs down, which would be the UI asserting a risk judgment no physics
+      produced.
+      **Scope:** the component is validated, but it is rendered in `Console`
+      with a null target — screening is not wired, so there is no real TCA to
+      count to yet and it shows its empty state. Wiring it to live pipeline
+      output is the next item.
 - [ ] Envisat replay wired end-to-end (globe + countdown + Pc trend + AI recommendation, all live from real pipeline output)
 - [ ] Cosmos 2221 wired as secondary/backup scenario
 

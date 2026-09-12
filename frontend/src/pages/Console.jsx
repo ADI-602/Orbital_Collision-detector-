@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 
 import { API_BASE_URL } from '../api/client.js'
+import Countdown from '../components/common/Countdown.jsx'
 import ErrorState from '../components/common/ErrorState.jsx'
 import GaugeCard from '../components/common/GaugeCard.jsx'
 import GlassPanel from '../components/common/GlassPanel.jsx'
@@ -222,6 +223,23 @@ function Console() {
             tone="critical"
             unit="Pc"
             footnote="No conjunction assessed. Screening between tracked objects is not wired up yet."
+          />
+
+          {/*
+            Deliberately passed a null target. Screening is not wired yet, so
+            there is no TCA to count to, and the countdown says exactly that.
+            When step 4 lands, this takes the selected event's `tca_utc_iso`
+            and its `threat_level` as `tone` — no other change is needed.
+
+            It free-runs against real UTC rather than the globe's x120
+            simulated clock: a TCA is a real instant, and the caption under
+            the clock states which basis is in force. The Envisat replay will
+            pass `nowUtc` instead, since counting from today to a 2004
+            encounter would be meaningless.
+          */}
+          <Countdown
+            targetUtc={null}
+            emptyHint="No conjunction assessed yet, so there is no time of closest approach to count to. Screening between tracked objects is not wired up."
           />
         </GlassPanel>
       </div>

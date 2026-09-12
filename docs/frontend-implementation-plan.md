@@ -214,7 +214,10 @@ Maps to `implementation-checklist.md` Phase 5 items — work top to bottom:
    `StatusHeader`)~~ ✅ **DONE**
 3. Cesium globe rendering static/replay TLE positions
 4. Event list + event detail wired to screening/TCA endpoints
-5. T-minus countdown + "Play Envisat Scenario" driver
+5. ~~T-minus countdown~~ ✅ **DONE** (`Countdown.jsx` + `useCountdown` +
+   `lib/countdown.js`, validated; currently rendered with a null target
+   because no screening result feeds it yet) + "Play Envisat Scenario"
+   driver — **still to build**
 6. AI assistant panel wired to `/api/ai/advise`, with fallback-mode badge
 7. Maneuver simulation modal wired to `/api/physics/maneuver`
 8. Cosmos 2221 wired as secondary scenario
