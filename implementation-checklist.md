@@ -180,7 +180,30 @@ How to use this file: check items off as they're genuinely done (validated, not 
       independent of rendering, and `resolveClockBasis()` makes a caption that
       names a clock it is not counting against structurally impossible
       (3 regression tests in `lib/countdown.test.js`).
-- [ ] Cosmos 2221 wired as secondary/backup scenario
+- [~] ~~Cosmos 2221 wired as secondary/backup scenario~~ **DROPPED
+      (scope decision, 2026-09-13).** The human's call: Envisat as the
+      correctness proof plus live-time detection is enough, and a second
+      historical scenario adds no new evidence. This also retires the open
+      blocker in `docs/frontend-implementation-plan.md` §10 (no Cosmos 2221
+      TLE pair exists in the repo; sourcing one would have needed a
+      CelesTrak/Space-Track fetch plus its own validation pass).
+
+- [ ] **Live-time detection wired in the console** — the console currently
+      tracks real objects on the globe but runs no screening: the conjunction
+      gauge, the countdown and the maneuver region are all explicit empty
+      states saying so. The framing correction above requires this ("build the
+      console as a general tracking/detection tool"), but no line tracked it,
+      so it was invisible on this list. Needs: screen the tracked set through
+      `/api/physics/screening`, list detected events by threat level, and wire
+      a selected event into the existing countdown, maneuver and AI panels —
+      all of which already work, as the replay demonstrates.
+      **Contains a decision:** the console tracks CelesTrak's `stations` group
+      (~21 objects), which on any given day has no real close approach, so
+      honest screening returns an empty list. Either widen the candidate set
+      to a catalog where real conjunctions occur, or drive the demo from an
+      injected close-approach case that the UI labels as injected. The
+      framing note above already anticipates the second option ("manually
+      injected cases serve the same role for detection").
 
 🔒 **Gate: full Envisat demo flow must run start-to-finish without manual
 intervention before Phase 6 starts.** ⏳ NOT YET PASSED — the flow does run
@@ -216,7 +239,13 @@ is outstanding.
 ## Phase 6 — Polish + demo prep
 
 - [ ] Visual polish pass on dashboard/globe
-- [ ] `docs/validation-notes.md` written (how we know our numbers are right — Alfano, frame check, Envisat comparison)
+- [x] `docs/validation-notes.md` written — 389 lines covering §1 frame
+      transforms, §2 covariance source, §3 the Alfano case, §4 the Envisat
+      replay with the published-vs-computed table, §5 the Pc formula
+      reference. All three things this item asks for are present and current.
+      (Its §4.4 table records the pytest path's numbers; the API path the
+      frontend uses agrees to within a metre — worth adding as a short
+      subsection when convenient, not a correctness gap.)
 - [ ] `demo/recorded_fallback.mp4` recorded (re-record if any pipeline change affects demo numbers)
 - [ ] `demo/demo_checklist.md` written (pre-demo run-through steps)
 - [ ] Full team rehearsal of the live demo + fallback switch
