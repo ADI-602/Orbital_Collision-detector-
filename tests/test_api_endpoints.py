@@ -84,6 +84,77 @@ def test_screening_endpoint():
     assert data["events"][0]["secondary_name"] == "ZENITH-2 DEBRIS"
 
 
+def test_screening_endpoint_isolates_an_unassessable_pair():
+    """
+    One pair the physics cannot assess must not discard the whole batch.
+
+    This is the exact request that used to return HTTP 500. The frontend's
+    offline TLE snapshot contained two entries, labelled POISK and ISS
+    (NAUKA), that were the ISS (ZARYA) element set with only the catalog
+    number changed. Identical elements mean zero separation and zero relative
+    velocity at TCA, so compute_pc correctly refuses — there is no encounter
+    plane for a stationary conjunction. That refusal escaped the per-candidate
+    loop and failed the whole request, discarding CSS (TIANHE)'s result too.
+
+    The fabricated entries are gone from the snapshot (see tleSnapshot.js and
+    its test), but they are kept here on purpose: they are the only input
+    known to reproduce the crash, and a regression test needs the real thing.
+
+    compute_pc's exception is correct and unchanged. The endpoint's job is to
+    carry it through as data, so the pair is reported in `unassessable` rather
+    than dropped — "not assessed" and "assessed and safe" are different
+    claims, and screening output must never blur them.
+    """
+    iss = {
+        "name": "ISS (ZARYA)",
+        "line1": "1 25544U 98067A   26242.49847866  .00005671  00000+0  11126-3 0  9990",
+        "line2": "2 25544  51.6316 292.2906 0005027  90.0365 270.1200 15.48938909583274",
+    }
+    poisk = {
+        "name": "POISK",
+        "line1": "1 36086U 09060A   26242.49847866  .00005671  00000+0  11126-3 0  9998",
+        "line2": "2 36086  51.6316 292.2906 0005027  90.0365 270.1200 15.48938909583963",
+    }
+    css = {
+        "name": "CSS (TIANHE)",
+        "line1": "1 48274U 21035A   26242.40883656  .00019520  00000+0  24340-3 0  9994",
+        "line2": "2 48274  41.4676 231.4402 0001913 255.2624 104.8002 15.59424488304755",
+    }
+    nauka = {
+        "name": "ISS (NAUKA)",
+        "line1": "1 49044U 21066A   26242.49847866  .00005671  00000+0  11126-3 0  9996",
+        "line2": "2 49044  51.6316 292.2906 0005027  90.0365 270.1200 15.48938909584007",
+    }
+
+    payload = {
+        "primary": iss,
+        "candidates": [poisk, css, nauka],
+        "start_utc_iso": "2026-08-30T00:00:00Z",
+        "search_duration_hours": 24.0,
+        "coarse_threshold_km": 500.0,
+    }
+
+    response = client.post("/api/physics/screening", json=payload)
+
+    assert response.status_code == 200, (
+        f"one unassessable pair must not fail the batch; got "
+        f"{response.status_code}: {response.text[:200]}"
+    )
+    data = response.json()
+    assert data["candidates_screened"] == 3
+
+    # Both degenerate pairs are reported, carrying the physics layer's reason.
+    unassessable = {u["secondary_name"]: u["reason"] for u in data["unassessable"]}
+    assert set(unassessable) == {"POISK", "ISS (NAUKA)"}
+    for reason in unassessable.values():
+        assert "zero" in reason.lower()
+
+    # And neither is quietly counted as a screened, safe result.
+    names = [e["secondary_name"] for e in data["events"]]
+    assert "POISK" not in names
+    assert "ISS (NAUKA)" not in names
+
+
 def test_maneuver_endpoint():
     env_l1, env_l2 = ENVISAT_TLES["oct_22"]
     zen_l1, zen_l2 = ZENITH2_TLES["oct_22"]

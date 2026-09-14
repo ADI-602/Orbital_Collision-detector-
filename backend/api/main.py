@@ -199,44 +199,71 @@ def screening_endpoint(req: ScreeningPhysicsRequest) -> Dict[str, Any]:
         )
 
         events_out = []
+        # Pairs the pipeline legitimately cannot assess. Reported rather than
+        # dropped: "we did not assess this pair" and "this pair is safe" are
+        # very different statements, and a screening result that silently
+        # omits the difference is misleading.
+        unassessable = []
+
         for c in flagged_candidates:
-            w_start = ts.tt_jd(float(c.min_separation_time.tt) - (7200.0 / 86400.0))
-            w_end = ts.tt_jd(float(c.min_separation_time.tt) + (7200.0 / 86400.0))
-            tca_res = compute_tca_from_tles(c.primary, c.secondary, w_start, w_end, threshold_km=500.0)
+            # One candidate must never take down the batch. Screening a live
+            # catalog reliably turns up pairs that cannot be assessed — two
+            # objects sharing an element set, for instance, have zero relative
+            # velocity at TCA, for which no encounter plane exists. Before this
+            # guard a single such pair returned HTTP 500 and discarded the
+            # results for every other candidate in the request.
+            try:
+                w_start = ts.tt_jd(float(c.min_separation_time.tt) - (7200.0 / 86400.0))
+                w_end = ts.tt_jd(float(c.min_separation_time.tt) + (7200.0 / 86400.0))
+                tca_res = compute_tca_from_tles(c.primary, c.secondary, w_start, w_end, threshold_km=500.0)
 
-            if not tca_res:
-                continue
+                if not tca_res:
+                    continue
 
-            elem1 = _orbital_elements_from_tle(c.primary)
-            elem2 = _orbital_elements_from_tle(c.secondary)
+                elem1 = _orbital_elements_from_tle(c.primary)
+                elem2 = _orbital_elements_from_tle(c.secondary)
 
-            cov1_rtn = _tle_covariance_rtn(elem1["inclination_deg"], elem1["perigee_alt_km"], elem1["eccentricity"])
-            cov2_rtn = _tle_covariance_rtn(elem2["inclination_deg"], elem2["perigee_alt_km"], elem2["eccentricity"])
+                cov1_rtn = _tle_covariance_rtn(elem1["inclination_deg"], elem1["perigee_alt_km"], elem1["eccentricity"])
+                cov2_rtn = _tle_covariance_rtn(elem2["inclination_deg"], elem2["perigee_alt_km"], elem2["eccentricity"])
 
-            cov1_eci = covariance_rtn_to_eci(cov1_rtn, tca_res.state1_eci.pos_eci_km, tca_res.state1_eci.vel_eci_km_s)
-            cov2_eci = covariance_rtn_to_eci(cov2_rtn, tca_res.state2_eci.pos_eci_km, tca_res.state2_eci.vel_eci_km_s)
+                cov1_eci = covariance_rtn_to_eci(cov1_rtn, tca_res.state1_eci.pos_eci_km, tca_res.state1_eci.vel_eci_km_s)
+                cov2_eci = covariance_rtn_to_eci(cov2_rtn, tca_res.state2_eci.pos_eci_km, tca_res.state2_eci.vel_eci_km_s)
 
-            pc = compute_pc(
-                tca_res.state1_eci,
-                tca_res.state2_eci,
-                cov1_eci,
-                cov2_eci,
-                hard_body_radius_km=0.0145,
-            )
+                pc = compute_pc(
+                    tca_res.state1_eci,
+                    tca_res.state2_eci,
+                    cov1_eci,
+                    cov2_eci,
+                    hard_body_radius_km=0.0145,
+                )
 
-            events_out.append({
-                "secondary_name": c.secondary.name,
-                "tca_utc_iso": tca_res.tca_time.utc_strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "miss_distance_m": tca_res.miss_distance_km * 1000.0,
-                "pc": pc,
-                "relative_speed_km_s": tca_res.rel_velocity_km_s,
-                "threat_level": "RED" if pc >= 1e-4 else ("YELLOW" if pc >= 1e-5 else "GREEN"),
-            })
+                events_out.append({
+                    "secondary_name": c.secondary.name,
+                    "tca_utc_iso": tca_res.tca_time.utc_strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "miss_distance_m": tca_res.miss_distance_km * 1000.0,
+                    "pc": pc,
+                    "relative_speed_km_s": tca_res.rel_velocity_km_s,
+                    "threat_level": "RED" if pc >= 1e-4 else ("YELLOW" if pc >= 1e-5 else "GREEN"),
+                })
+            except Exception as pair_error:
+                # The physics raising here is correct behaviour, not a bug to
+                # paper over: compute_pc refuses rather than inventing a Pc it
+                # cannot define. The endpoint's job is to carry that refusal
+                # through as data instead of as a 500.
+                logger.warning(
+                    "screening_endpoint: could not assess %s vs %s: %s",
+                    primary_sat.name, c.secondary.name, pair_error,
+                )
+                unassessable.append({
+                    "secondary_name": c.secondary.name,
+                    "reason": str(pair_error),
+                })
 
         return {
             "primary_name": primary_sat.name,
             "candidates_screened": len(candidate_sats),
             "events": events_out,
+            "unassessable": unassessable,
         }
     except Exception as e:
         logger.error("screening_endpoint failed: %s", e)
