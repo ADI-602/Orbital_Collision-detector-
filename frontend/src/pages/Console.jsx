@@ -1,20 +1,53 @@
 import { useCallback, useMemo, useState } from 'react'
 
 import { API_BASE_URL } from '../api/client.js'
+import {
+  maneuverResultToManeuverOption,
+  screeningEventToConjunctionContext,
+} from '../api/adapters.js'
 import Countdown from '../components/common/Countdown.jsx'
 import ErrorState from '../components/common/ErrorState.jsx'
 import GaugeCard from '../components/common/GaugeCard.jsx'
 import GlassPanel from '../components/common/GlassPanel.jsx'
-import PendingRegion from '../components/common/PendingRegion.jsx'
+import LoadingState from '../components/common/LoadingState.jsx'
 import PillStat from '../components/common/PillStat.jsx'
+import RiskBadge from '../components/common/RiskBadge.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
+import AiAdvisorPanel from '../components/panels/AiAdvisorPanel.jsx'
 import AssetStrip from '../components/panels/AssetStrip.jsx'
+import EventList from '../components/panels/EventList.jsx'
 import SelectedObjectPanel from '../components/panels/SelectedObjectPanel.jsx'
 import StatusHeader from '../components/panels/StatusHeader.jsx'
+import { useAiAdvice } from '../hooks/useAiAdvice.js'
 import { useHealth } from '../hooks/useHealth.js'
 import { useLiveSatellites } from '../hooks/useLiveSatellites.js'
+import { useLiveScreening } from '../hooks/useLiveScreening.js'
+import { useManeuverSim } from '../hooks/useManeuverSim.js'
+import { formatDeltaV, formatKg, formatMetres, formatPc, formatPercent } from '../lib/format.js'
+import {
+  INJECTED_DEBRIS,
+  INJECTED_DESCRIPTION,
+  INJECTED_LABEL,
+  INJECTED_PRIMARY,
+  INJECTED_SEARCH_HOURS,
+  INJECTED_WINDOW_START_ISO,
+} from '../lib/injectedScenario.js'
 import { DEFAULT_SPEED_MULTIPLIER, formatSimClock } from '../lib/simClock.js'
 import './Console.css'
+
+/** Hours of the primary's element-set epoch to screen in live mode. */
+const LIVE_SEARCH_HOURS = 24
+
+/**
+ * The burn to simulate for a detected event. -4 cm/s at 50 min of lead is the
+ * manoeuvre ESA actually flew for the Envisat conjunction, used here as a
+ * representative retrograde burn rather than an optimised one — the slider
+ * that makes it adjustable is still to build.
+ */
+const DEFAULT_BURN = { delta_v_cm_s: -4.0, lead_time_minutes: 50.0 }
+
+/** Threat level -> visual tone. The pipeline's call, never the UI's. */
+const TONE_BY_THREAT = { RED: 'critical', YELLOW: 'watch', GREEN: 'nominal' }
 
 const UVICORN_COMMAND = 'backend\\.venv\\Scripts\\uvicorn backend.api.main:app --reload --port 8000'
 
@@ -96,6 +129,7 @@ function ClockIcon() {
 function Console({ onViewChange }) {
   const health = useHealth()
   const {
+    records,
     count,
     loading,
     error: tleError,
@@ -108,6 +142,8 @@ function Console({ onViewChange }) {
 
   const [telemetry, setTelemetry] = useState({ simTime: null, satellites: [] })
   const [selectedId, setSelectedId] = useState(null)
+  const [mode, setMode] = useState('live')
+  const [selectedEventName, setSelectedEventName] = useState(null)
 
   const handleTelemetry = useCallback((next) => setTelemetry(next), [])
   const handleSelect = useCallback((id) => setSelectedId(id), [])
@@ -118,6 +154,82 @@ function Console({ onViewChange }) {
   )
 
   const tracked = telemetry.satellites.length
+
+  // --- Detection ----------------------------------------------------------
+  // Two sources, never blended. Live screening runs the real tracked set and
+  // reports whatever it finds, usually nothing. The injected scenario is a
+  // constructed encounter, labelled as such everywhere it appears, that exists
+  // so the detect -> assess -> advise chain can be shown end to end.
+  const screeningInput = useMemo(() => {
+    if (mode === 'injected') {
+      return {
+        primary: INJECTED_PRIMARY,
+        candidates: INJECTED_DEBRIS,
+        searchHours: INJECTED_SEARCH_HOURS,
+        startUtcIso: INJECTED_WINDOW_START_ISO,
+      }
+    }
+
+    // The globe selection doubles as the screening primary; failing that, the
+    // first tracked object. Screening needs raw TLE lines, which the tracking
+    // hook keeps alongside each satrec.
+    if (records.length < 2) return null
+    const primary = records.find((r) => r.id === selectedId) ?? records[0]
+    const candidates = records.filter((r) => r.id !== primary.id)
+    if (!candidates.length) return null
+
+    const asTle = (r) => ({ name: r.name, line1: r.line1, line2: r.line2 })
+    return {
+      primary: asTle(primary),
+      candidates: candidates.map(asTle),
+      searchHours: LIVE_SEARCH_HOURS,
+    }
+  }, [mode, records, selectedId])
+
+  const screening = useLiveScreening(screeningInput)
+
+  const activeEvent = useMemo(() => {
+    if (!screening.events.length) return null
+    return (
+      screening.events.find((e) => e.secondary_name === selectedEventName) ??
+      screening.events[0]
+    )
+  }, [screening.events, selectedEventName])
+
+  const eventTone = activeEvent
+    ? (TONE_BY_THREAT[activeEvent.threat_level] ?? 'accent')
+    : 'accent'
+
+  // The secondary's element set, matched by name — the screening response
+  // carries a name, not the lines it was screened from.
+  const activeSecondary = useMemo(() => {
+    if (!activeEvent || !screeningInput) return null
+    return screeningInput.candidates.find((c) => c.name === activeEvent.secondary_name) ?? null
+  }, [activeEvent, screeningInput])
+
+  const maneuverRequest = useMemo(() => {
+    if (!activeEvent || !activeSecondary || !screeningInput) return null
+    return {
+      primary: screeningInput.primary,
+      secondary: activeSecondary,
+      tca_utc_iso: activeEvent.tca_utc_iso,
+      ...DEFAULT_BURN,
+    }
+  }, [activeEvent, activeSecondary, screeningInput])
+
+  const maneuver = useManeuverSim(maneuverRequest)
+  const maneuverSettled = ['done', 'empty', 'error'].includes(maneuver.status)
+
+  const aiRequest = useMemo(() => {
+    if (!activeEvent || !screeningInput || !maneuverSettled) return null
+    return {
+      conjunction: screeningEventToConjunctionContext(activeEvent, screeningInput.primary.name),
+      maneuvers: maneuver.result ? [maneuverResultToManeuverOption(maneuver.result)] : [],
+      query_type: 'recommendation',
+    }
+  }, [activeEvent, screeningInput, maneuverSettled, maneuver.result])
+
+  const ai = useAiAdvice(aiRequest)
 
   return (
     <div className="console">
@@ -145,6 +257,64 @@ function Console({ onViewChange }) {
 
       {/* --- Left rail ---------------------------------------------------- */}
       <div className="console__rail-left">
+        <GlassPanel
+          title="Conjunction screening"
+          className="console__card"
+          actions={
+            <div className="console__modes">
+              <button
+                type="button"
+                className={`console__mode ${mode === 'live' ? 'is-active' : ''}`}
+                onClick={() => { setMode('live'); setSelectedEventName(null) }}
+                aria-pressed={mode === 'live'}
+              >
+                Live
+              </button>
+              <button
+                type="button"
+                className={`console__mode ${mode === 'injected' ? 'is-active' : ''}`}
+                onClick={() => { setMode('injected'); setSelectedEventName(null) }}
+                aria-pressed={mode === 'injected'}
+                title={INJECTED_DESCRIPTION}
+              >
+                {INJECTED_LABEL}
+              </button>
+            </div>
+          }
+        >
+          {/*
+            The injected banner is not decoration. These objects do not exist,
+            and anything on screen that came from them has to carry that fact
+            with it — a camera cannot tell a constructed encounter from a
+            catalogued one.
+          */}
+          {mode === 'injected' && (
+            <p className="console__injected-note">
+              <strong>{INJECTED_LABEL}</strong> — {INJECTED_DESCRIPTION}
+            </p>
+          )}
+
+          <div className="console__screen-primary">
+            <span className="console__feed-key">Primary</span>
+            <span className="console__feed-val ui-readout">
+              {screeningInput?.primary.name ?? '—'}
+            </span>
+          </div>
+
+          <EventList
+            status={screening.status}
+            events={screening.events}
+            unassessable={screening.unassessable}
+            windowStart={screening.windowStart}
+            windowHours={screening.windowHours}
+            screenedCount={screening.screenedCount}
+            selectedName={activeEvent?.secondary_name ?? null}
+            onSelect={(e) => setSelectedEventName(e.secondary_name)}
+            error={screening.error}
+            onRetry={screening.refresh}
+          />
+        </GlassPanel>
+
         <GlassPanel className="console__card">
           <GaugeCard
             label="Tracking status"
@@ -212,35 +382,102 @@ function Console({ onViewChange }) {
 
       {/* --- Right rail ---------------------------------------------------- */}
       <div className="console__rail-right">
-        <GlassPanel title="Selected object" className="console__card">
-          <SelectedObjectPanel satellite={selected} />
-        </GlassPanel>
-
         <GlassPanel title="Conjunction risk" className="console__card">
+          {/*
+            Pc is shown on a log gauge because probability spans decades: on a
+            linear scale every value the pipeline produces would pin to zero.
+            The arc is the exponent's position between 1e-8 and 1e-2; the
+            readout is always the real number.
+          */}
           <GaugeCard
-            label=""
-            value={null}
-            tone="critical"
+            label={activeEvent?.secondary_name ?? ''}
+            value={activeEvent ? Math.max(0, Math.log10(activeEvent.pc) + 8) : null}
+            max={6}
+            display={activeEvent ? formatPc(activeEvent.pc) : undefined}
+            tone={eventTone}
             unit="Pc"
-            footnote="No conjunction assessed. Screening between tracked objects is not wired up yet."
+            footnote={
+              activeEvent
+                ? `Miss distance ${formatMetres(activeEvent.miss_distance_m)} at ${activeEvent.relative_speed_km_s.toFixed(2)} km/s`
+                : 'No conjunction found. Nothing crossed the screening threshold in the searched window.'
+            }
           />
+
+          {activeEvent && (
+            <div className="console__threat">
+              <RiskBadge level={activeEvent.threat_level} />
+            </div>
+          )}
 
           {/*
-            Deliberately passed a null target. Screening is not wired yet, so
-            there is no TCA to count to, and the countdown says exactly that.
-            When step 4 lands, this takes the selected event's `tca_utc_iso`
-            and its `threat_level` as `tone` — no other change is needed.
-
-            It free-runs against real UTC rather than the globe's x120
-            simulated clock: a TCA is a real instant, and the caption under
-            the clock states which basis is in force. The Envisat replay will
-            pass `nowUtc` instead, since counting from today to a 2004
-            encounter would be meaningless.
+            Counts against real UTC, not the globe's x120 simulated clock: a
+            TCA is a real instant. The caption under the clock says which basis
+            is in force, and with a stale element set the TCA can legitimately
+            be in the past, which reads as T+ rather than being hidden.
           */}
           <Countdown
-            targetUtc={null}
-            emptyHint="No conjunction assessed yet, so there is no time of closest approach to count to. Screening between tracked objects is not wired up."
+            targetUtc={activeEvent?.tca_utc_iso ?? null}
+            tone={eventTone}
+            emptyHint="No conjunction found in the searched window, so there is no time of closest approach to count to."
           />
+        </GlassPanel>
+
+        <GlassPanel title="Maneuver" className="console__card">
+          {maneuver.status === 'idle' && (
+            <p className="event-list__note">Select a detected conjunction to simulate a burn.</p>
+          )}
+          {maneuver.status === 'running' && <LoadingState label="Simulating burn" />}
+          {maneuver.status === 'empty' && (
+            <p className="event-list__note">
+              The maneuver endpoint found no close approach to act on for this pair.
+            </p>
+          )}
+          {maneuver.status === 'error' && (
+            <ErrorState
+              title="Maneuver simulation failed"
+              detail={maneuver.error?.detail ?? maneuver.error?.message}
+              onRetry={maneuver.refresh}
+            />
+          )}
+          {maneuver.status === 'done' && maneuver.result && (
+            <div className="console__maneuver">
+              <div className="console__feed-row">
+                <span className="console__feed-key">Burn</span>
+                <span className="console__feed-val ui-readout">
+                  {formatDeltaV(maneuver.result.delta_v_cm_s)}
+                </span>
+              </div>
+              <div className="console__feed-row">
+                <span className="console__feed-key">Miss</span>
+                <span className="console__feed-val ui-readout">
+                  {formatMetres(maneuver.result.pre_burn_miss_distance_m)} →{' '}
+                  {formatMetres(maneuver.result.post_burn_miss_distance_m)}
+                </span>
+              </div>
+              <div className="console__feed-row">
+                <span className="console__feed-key">Pc</span>
+                <span className="console__feed-val ui-readout">
+                  {formatPc(maneuver.result.pre_burn_pc)} → {formatPc(maneuver.result.post_burn_pc)}
+                </span>
+              </div>
+              <div className="console__feed-row">
+                <span className="console__feed-key">Reduction</span>
+                <span className="console__feed-val ui-readout">
+                  {formatPercent(maneuver.result.risk_reduction_pct)}
+                </span>
+              </div>
+              <div className="console__feed-row">
+                <span className="console__feed-key">Propellant</span>
+                <span className="console__feed-val ui-readout">
+                  {formatKg(maneuver.result.fuel_consumed_kg)}
+                </span>
+              </div>
+            </div>
+          )}
+        </GlassPanel>
+
+        <GlassPanel title="Selected object" className="console__card">
+          <SelectedObjectPanel satellite={selected} />
         </GlassPanel>
       </div>
 
@@ -270,10 +507,14 @@ function Console({ onViewChange }) {
               />
             </div>
 
-            <div className="console__strip-pending">
-              <PendingRegion
-                region="Maneuver planning"
-                awaiting="Delta-V simulation and AI recommendation arrive with detection."
+            <div className="console__strip-ai">
+              <AiAdvisorPanel
+                status={ai.status}
+                advice={ai.advice}
+                isLive={ai.isLive}
+                error={ai.error}
+                onRetry={ai.refresh}
+                awaiting="Waiting for a detected conjunction to explain."
               />
             </div>
           </div>

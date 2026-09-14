@@ -31,6 +31,7 @@ function GaugeCard({
   footnote,
 }) {
   const isEmpty = value === null || value === undefined || !Number.isFinite(value)
+  const readout = isEmpty ? '—' : (display ?? String(value))
   const ratio = isEmpty || max <= 0 ? 0 : Math.min(Math.max(value / max, 0), 1)
   const dash = CIRCUMFERENCE * ratio
 
@@ -64,8 +65,18 @@ function GaugeCard({
         </svg>
 
         <div className="gauge-card__centre">
-          <span className="gauge-card__readout ui-readout">
-            {isEmpty ? '—' : (display ?? String(value))}
+          {/*
+            Long readouts (a formatted Pc runs to ~10 glyphs) get a smaller
+            step so they fit inside the ring. Clipping a probability mid-
+            exponent turns 4.66x10^-5 into 4.66x10^-, which reads as a
+            different number entirely.
+          */}
+          <span
+            className={`gauge-card__readout ui-readout${
+              readout.length > 6 ? ' gauge-card__readout--long' : ''
+            }`}
+          >
+            {readout}
           </span>
           {unit && <span className="gauge-card__unit">{unit}</span>}
         </div>

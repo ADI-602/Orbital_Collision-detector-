@@ -175,3 +175,87 @@
 .console__feed-degraded .error-state__detail {
   font-size: 11px;
 }
+
+/* --- Detection ------------------------------------------------------------ */
+
+.console__modes {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.console__mode {
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  cursor: pointer;
+
+  &:hover { color: var(--text-secondary); }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.console__mode.is-active {
+  background: var(--card-fill-strong);
+  color: var(--text-primary);
+}
+
+/*
+ * The injected banner. Deliberately loud relative to the rest of the console's
+ * restraint: everything downstream of it is computed from objects that do not
+ * exist, and that has to be impossible to miss on a projector.
+ */
+.console__injected-note {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-inner);
+  border: 1px solid var(--risk-watch);
+  background: var(--risk-watch-soft);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.console__injected-note strong {
+  color: var(--risk-watch);
+  letter-spacing: 0.06em;
+}
+
+.console__screen-primary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.console__threat {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-2) 0;
+}
+
+.console__maneuver {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.console__strip-ai {
+  min-width: 260px;
+  max-width: 420px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.console__strip-ai .ai-panel {
+  padding: 0;
+}

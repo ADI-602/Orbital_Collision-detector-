@@ -61,3 +61,39 @@ export function parseTleText(text) {
 
   return records
 }
+
+/**
+ * UTC epoch of a TLE, parsed from line 1 columns 19-32 (`YYDDD.DDDDDDDD`).
+ *
+ * Why anyone needs this: an element set is most accurate at its own epoch and
+ * degrades either side of it. Screening "the next 24 hours from now" against a
+ * two-week-old element set propagates it two weeks before it even starts,
+ * which is how a conjunction search quietly becomes fiction. Anchoring the
+ * search window to the epoch keeps the question honest, and with a fresh live
+ * feed the epoch IS roughly now, so nothing is lost.
+ *
+ * The two-digit year follows the TLE convention: 57-99 means 1957-1999,
+ * 00-56 means 2000-2056.
+ *
+ * @param {string} line1
+ * @returns {Date|null} null when the field is not parseable
+ */
+export function tleEpochUtc(line1) {
+  if (typeof line1 !== 'string' || line1.length < 32) return null
+
+  const field = line1.slice(18, 32).trim()
+  const match = /^(\d{2})(\d{3}\.\d+)$/.exec(field)
+  if (!match) return null
+
+  const yy = Number(match[1])
+  const dayOfYear = Number(match[2])
+  if (!Number.isFinite(dayOfYear) || dayOfYear < 1) return null
+
+  const year = yy < 57 ? 2000 + yy : 1900 + yy
+
+  // Day 1.0 is midnight on January 1st, so the fractional day is an offset
+  // from the start of the year rather than from January 1st 00:00 plus a day.
+  const ms = Date.UTC(year, 0, 1) + (dayOfYear - 1) * 86400_000
+  const date = new Date(ms)
+  return Number.isNaN(date.getTime()) ? null : date
+}

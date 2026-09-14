@@ -46,6 +46,12 @@
   line-height: 1;
 }
 
+/* Fits a formatted collision probability inside the ring. */
+.gauge-card__readout--long {
+  font-size: var(--fs-body);
+  letter-spacing: -0.02em;
+}
+
 .gauge-card__unit {
   font-family: var(--font-sans);
   font-size: var(--fs-micro);

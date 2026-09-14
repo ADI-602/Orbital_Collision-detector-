@@ -188,22 +188,42 @@ How to use this file: check items off as they're genuinely done (validated, not 
       TLE pair exists in the repo; sourcing one would have needed a
       CelesTrak/Space-Track fetch plus its own validation pass).
 
-- [ ] **Live-time detection wired in the console** — the console currently
-      tracks real objects on the globe but runs no screening: the conjunction
-      gauge, the countdown and the maneuver region are all explicit empty
-      states saying so. The framing correction above requires this ("build the
-      console as a general tracking/detection tool"), but no line tracked it,
-      so it was invisible on this list. Needs: screen the tracked set through
-      `/api/physics/screening`, list detected events by threat level, and wire
-      a selected event into the existing countdown, maneuver and AI panels —
-      all of which already work, as the replay demonstrates.
-      **Contains a decision:** the console tracks CelesTrak's `stations` group
-      (~21 objects), which on any given day has no real close approach, so
-      honest screening returns an empty list. Either widen the candidate set
-      to a catalog where real conjunctions occur, or drive the demo from an
-      injected close-approach case that the UI labels as injected. The
-      framing note above already anticipates the second option ("manually
-      injected cases serve the same role for detection").
+- [x] **Live-time detection wired in the console** — the console now screens
+      through `/api/physics/screening` and wires a selected event into the Pc
+      gauge, the T-minus countdown, a burn simulation and the AI advisor. Suite
+      138/138 frontend, 57/57 backend.
+      **Two sources, never blended.** A LIVE/INJECTED toggle switches between
+      them and each is labelled on screen:
+        - *Live* screens the real tracked set, with the search window anchored
+          to the PRIMARY'S ELEMENT-SET EPOCH rather than the wall clock — an
+          element set is most accurate at its own epoch, and screening "the
+          next 24 h from now" against a two-week-old TLE propagates it two
+          weeks before the window even opens. Verified rendering against a live
+          backend: "No close approach found — 1 candidate screened over
+          2026-08-30 11:57:48Z + 24 h", which is the honest result for a
+          two-object offline set and is styled as a result, not a failure.
+        - *Injected* (`lib/injectedScenario.js`) is a constructed encounter
+          against a real ISS element set, carrying a loud INJECTED banner
+          wherever it appears. Verified end to end: DEBRIS A 405.7 m,
+          Pc 4.66×10⁻⁵, YELLOW/Watch; DEBRIS B 6075.4 m, Pc 7.29×10⁻²², GREEN;
+          burn −4.0 cm/s taking the miss to 685.5 m and Pc to 3.47×10⁻⁶ (92.5%
+          reduction, 0.152 kg); advisor correctly reporting MONITOR ONLY since
+          Pc is below the 10⁻⁴ threshold.
+      **The synthetic objects were not tuned until they looked dangerous.** The
+      geometry is a plain crossing orbit derived from the ISS element set, and
+      YELLOW is the level the physics assigned to where it landed. Adjusting a
+      constructed encounter until it returns an alarming number would be
+      manufacturing a crisis — the same dishonesty as fabricating the number.
+      **Validated by:** `lib/injectedScenario.test.js` (checksums, propagator
+      acceptance, shared epoch, analyst catalog range, and that the scenario
+      still pairs with the ISS lines it was solved against),
+      `lib/tle.test.js` (epoch parsing), plus the full view rendered headless
+      against a running backend in both modes.
+      **Not yet exercised:** the "found something" branch of *live* screening.
+      CelesTrak is unreachable from the build container and the offline
+      snapshot holds two objects in unrelated orbits, so live mode can only be
+      shown reporting an honest empty result here. Running it against a
+      real fetched candidate set is the remaining confirmation.
 
 🔒 **Gate: full Envisat demo flow must run start-to-finish without manual
 intervention before Phase 6 starts.** ⏳ NOT YET PASSED — the flow does run

@@ -64,7 +64,18 @@ function buildSatrecs(text) {
   for (const r of parseTleText(text)) {
     const satrec = buildSatrec(r.line1, r.line2, r.name)
     if (!satrec) continue
-    built.push({ id: r.noradId, name: r.name, noradId: r.noradId, satrec })
+    built.push({
+      id: r.noradId,
+      name: r.name,
+      noradId: r.noradId,
+      satrec,
+      // The raw lines are kept alongside the satrec: conjunction screening
+      // runs in the Python pipeline and /api/physics/* takes raw TLE pairs.
+      // Re-serialising a satrec back into a TLE would be a second, divergent
+      // encoding of the same orbit.
+      line1: r.line1,
+      line2: r.line2,
+    })
   }
   return built
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { parseTleText } from './tle.js'
+import { parseTleText, tleEpochUtc } from './tle.js'
 
 // Verbatim from CelesTrak's stations group, trailing name padding included.
 const SAMPLE = `ISS (ZARYA)
@@ -59,5 +59,35 @@ not an element line
 also not an element line
 `
     expect(parseTleText(malformed)).toEqual([])
+  })
+})
+
+describe('tleEpochUtc', () => {
+  it('parses the epoch field into a UTC instant', () => {
+    // 26242.49847866 -> 2026, day 242, just before midday.
+    const iss = '1 25544U 98067A   26242.49847866  .00005671  00000+0  11126-3 0  9990'
+    const epoch = tleEpochUtc(iss)
+    expect(epoch.toISOString().slice(0, 10)).toBe('2026-08-30')
+    expect(epoch.getUTCHours()).toBe(11)
+  })
+
+  it('applies the TLE two-digit year convention', () => {
+    // 57-99 is the 1900s, 00-56 the 2000s.
+    const y1998 = '1 25544U 98067A   98324.50000000  .00000000  00000+0  00000-0 0  9990'
+    const y2004 = '1 27386U 02009A   04296.50000000  .00000000  00000+0  00000-0 0  9990'
+    expect(tleEpochUtc(y1998).getUTCFullYear()).toBe(1998)
+    expect(tleEpochUtc(y2004).getUTCFullYear()).toBe(2004)
+  })
+
+  it('treats day 1.0 as the very start of January 1st', () => {
+    const jan1 = '1 00001U 00001A   26001.00000000  .00000000  00000+0  00000-0 0  9990'
+    expect(tleEpochUtc(jan1).toISOString()).toBe('2026-01-01T00:00:00.000Z')
+  })
+
+  it('returns null rather than a guess for an unparseable field', () => {
+    expect(tleEpochUtc('')).toBeNull()
+    expect(tleEpochUtc('not a tle line at all, far too short')).toBeNull()
+    expect(tleEpochUtc('1 25544U 98067A   XXXXX.XXXXXXXX  .00005671  00000+0  11126-3 0  9990')).toBeNull()
+    expect(tleEpochUtc(null)).toBeNull()
   })
 })
