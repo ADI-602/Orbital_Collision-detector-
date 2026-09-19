@@ -222,9 +222,10 @@ Maps to `implementation-checklist.md` Phase 5 items — work top to bottom:
 6. ~~AI assistant panel wired to `/api/ai/advise`, with fallback-mode badge~~
    ✅ **DONE** (`AiAdvisorPanel`, strict `is_fallback === false` check). The
    follow-up chat input is not built — the panel is read-only for now.
-7. Maneuver simulation modal (delta-v slider) — **still to build**. The
-   replay already calls `/api/physics/maneuver` for the burn ESA flew and
-   renders pre/post Pc; what is missing is the interactive slider.
+7. ~~Maneuver simulation (delta-v slider)~~ ✅ **DONE** — `ManeuverPlanner`,
+   in both the console and the replay. Built as an inline panel rather than
+   the modal this plan first sketched: the tradeoff is worth more beside the
+   Pc readout it is moving than on top of it.
 8. ~~Cosmos 2221 wired as secondary scenario~~ **DROPPED** (scope decision,
    2026-09-13 — see `implementation-checklist.md` Phase 5). Envisat as the
    correctness proof plus live-time detection is enough; a second historical
@@ -284,11 +285,13 @@ without manual intervention before calling Phase 5 done.
 Phase 5 is complete, but that is not the same as "the frontend is finished".
 Three things from this plan were never built, and none of them is blocked:
 
-- **Maneuver delta-v slider** (step 7). Both the console and the replay call
-  `/api/physics/maneuver` and render pre/post miss distance and Pc, but for a
-  *fixed* burn (-4.0 cm/s at 50 min of lead, the one ESA flew). What is missing
-  is the interactive control that re-runs the endpoint as the operator drags —
-  the "what if we burn less?" moment the pitch describes.
+- ~~**Maneuver delta-v slider**~~ ✅ **DONE** — `ManeuverPlanner` gives both
+  views draggable ΔV (-20..+20 cm/s) and lead time (5..180 min), re-running
+  `/api/physics/maneuver` on a 250 ms debounce. Results are always labelled
+  with the burn they belong to: while a new burn is in flight the previous one
+  stays visible, dimmed, and captioned with its own parameters, since the
+  failure mode of a live control is a slider reading -6.0 while the numbers
+  are still the -4.0 answer. The staleness rule is `lib/burn.js`, tested.
 - **AI follow-up chat input** (§5). `AiAdvisorPanel` is read-only: it renders
   the advisor's opening analysis and nothing more. The planned follow-up box
   and suggested quick-questions do not exist.

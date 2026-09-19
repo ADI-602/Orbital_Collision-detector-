@@ -62,7 +62,12 @@ class ManeuverResult:
         post_burn_pc:              Collision probability after burn.
         risk_reduction_pct:        Percentage reduction in Pc.
         fuel_consumed_kg:          Propellant mass consumed [kg].
-        maneuver_recommended:      Boolean flag (True if post_burn_pc < pre_burn_pc and Pc < threshold).
+        maneuver_recommended:      True when the burn reduces Pc. This says the burn
+                                   helps, NOT that the residual risk is acceptable —
+                                   see post_burn_below_threshold for that.
+        post_burn_below_threshold: True when post_burn_pc is under risk_threshold_pc,
+                                   i.e. the burn actually resolves the conjunction.
+        risk_threshold_pc:         The threshold the above was judged against.
     """
     primary_name: str
     secondary_name: str
@@ -75,6 +80,8 @@ class ManeuverResult:
     risk_reduction_pct: float
     fuel_consumed_kg: float
     maneuver_recommended: bool
+    post_burn_below_threshold: bool
+    risk_threshold_pc: float
 
     def __repr__(self) -> str:
         return (
@@ -205,8 +212,22 @@ def simulate_maneuver(
     dv_m_s = abs(delta_v_cm_s) / 100.0
     fuel_consumed_kg = sat_mass_kg * (1.0 - np.exp(-dv_m_s / (_G0_M_S2 * isp_s)))
 
-    # Maneuver recommended if post_pc < pre_pc and post_pc < risk_threshold_pc
+    # Two separate questions, deliberately not collapsed into one boolean.
+    #
+    # `recommended` asks only whether the burn helps. `below_threshold` asks
+    # whether it finishes the job. They genuinely differ: the -4.0 cm/s burn
+    # ESA actually flew for this conjunction cut Pc substantially and still
+    # left it near 2e-4, above the 1e-4 accepted level of the day — they flew
+    # it anyway and accepted the residual. A single flag has to either call
+    # that burn "not recommended", contradicting the historical record, or
+    # call a 0.5 cm/s nudge that leaves Pc at 5e-4 "recommended", which tells
+    # an operator a conjunction is handled when it is not. Reporting both
+    # facts is the only honest option.
+    #
+    # `risk_threshold_pc` was previously documented as part of this decision
+    # and never evaluated at all; it now drives `below_threshold`.
     recommended = bool(post_pc < pre_pc)
+    below_threshold = bool(post_pc < risk_threshold_pc)
 
     logger.info(
         "simulate_maneuver: %s burn ΔV=%.1f cm/s at lead=%.1fm | "
@@ -227,4 +248,6 @@ def simulate_maneuver(
         risk_reduction_pct=risk_reduction_pct,
         fuel_consumed_kg=fuel_consumed_kg,
         maneuver_recommended=recommended,
+        post_burn_below_threshold=below_threshold,
+        risk_threshold_pc=risk_threshold_pc,
     )

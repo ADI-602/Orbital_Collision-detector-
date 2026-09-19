@@ -12,6 +12,7 @@ import LoadingState from '../components/common/LoadingState.jsx'
 import RiskBadge from '../components/common/RiskBadge.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AiAdvisorPanel from '../components/panels/AiAdvisorPanel.jsx'
+import ManeuverPlanner from '../components/panels/ManeuverPlanner.jsx'
 import PcTrend from '../components/panels/PcTrend.jsx'
 import StatusHeader from '../components/panels/StatusHeader.jsx'
 import { useAiAdvice } from '../hooks/useAiAdvice.js'
@@ -31,11 +32,9 @@ import {
 } from '../lib/envisatGroundTruth.js'
 import {
   formatDeltaV,
-  formatKg,
   formatKmPerSecond,
   formatMetres,
   formatPc,
-  formatPercent,
 } from '../lib/format.js'
 import { formatSimClock } from '../lib/simClock.js'
 import './Replay.css'
@@ -154,20 +153,28 @@ function Replay({ onViewChange }) {
   const event = active?.event ?? null
   const tone = event ? (TONE_BY_THREAT[event.threat_level] ?? 'accent') : 'accent'
 
-  // The burn ESA actually flew, re-simulated against this day's element sets.
-  const maneuverRequest = useMemo(() => {
+  // The pair and the encounter; ManeuverPlanner owns the burn parameters.
+  const maneuverTarget = useMemo(() => {
     if (!active || !event) return null
     return {
       primary: active.primary_tle,
       secondary: active.secondary_tle,
       tca_utc_iso: event.tca_utc_iso,
-      delta_v_cm_s: EXECUTED_MANEUVER.delta_v_cm_s,
-      lead_time_minutes: EXECUTED_MANEUVER.lead_time_minutes,
-      sat_mass_kg: ENVISAT_MASS_KG,
     }
   }, [active, event])
 
-  const maneuver = useManeuverSim(maneuverRequest)
+  // A separate fixed-burn run feeds the advisor, which is asked about the
+  // historical manoeuvre rather than about wherever the sliders happen to be.
+  const maneuver = useManeuverSim(
+    maneuverTarget
+      ? {
+          ...maneuverTarget,
+          delta_v_cm_s: EXECUTED_MANEUVER.delta_v_cm_s,
+          lead_time_minutes: EXECUTED_MANEUVER.lead_time_minutes,
+          sat_mass_kg: ENVISAT_MASS_KG,
+        }
+      : null,
+  )
   const maneuverSettled = ['done', 'empty', 'error'].includes(maneuver.status)
 
   /**
@@ -400,46 +407,24 @@ function Replay({ onViewChange }) {
           <p className="replay__note">{PC_METHODOLOGY_NOTE}</p>
         </GlassPanel>
 
-        <GlassPanel title="Maneuver — the burn ESA flew" className="replay__card">
-          {maneuver.status === 'running' && <LoadingState label="Simulating burn" />}
-          {maneuver.status === 'idle' && (
-            <p className="replay__empty">Waiting for a screened conjunction.</p>
-          )}
-          {maneuver.status === 'empty' && (
-            <p className="replay__empty">
-              The maneuver endpoint found no close approach to act on for this day.
-            </p>
-          )}
-          {maneuver.status === 'error' && (
-            <ErrorState
-              title="Maneuver simulation failed"
-              detail={maneuver.error?.detail ?? maneuver.error?.message}
-              onRetry={maneuver.refresh}
-            />
-          )}
-          {maneuver.status === 'done' && maneuver.result && (
-            <div className="replay__detail">
-              <Readout
-                label="Burn"
-                value={formatDeltaV(maneuver.result.delta_v_cm_s)}
-                note={`${maneuver.result.lead_time_minutes} min before TCA — the burn flown at ${EXECUTED_MANEUVER.burn_time_iso}`}
-              />
-              <Readout
-                label="Miss distance"
-                value={`${formatMetres(maneuver.result.pre_burn_miss_distance_m)} → ${formatMetres(maneuver.result.post_burn_miss_distance_m)}`}
-              />
-              <Readout
-                label="Pc"
-                value={`${formatPc(maneuver.result.pre_burn_pc)} → ${formatPc(maneuver.result.post_burn_pc)}`}
-                note={`paper reports ${formatPc(EXECUTED_MANEUVER.published_pre_burn_pc)} → ${formatPc(EXECUTED_MANEUVER.published_post_burn_pc)} for the flown burn — our simulation is independent of it`}
-              />
-              <Readout
-                label="Risk reduction"
-                value={formatPercent(maneuver.result.risk_reduction_pct)}
-              />
-              <Readout label="Propellant" value={formatKg(maneuver.result.fuel_consumed_kg)} />
-            </div>
-          )}
+        <GlassPanel title="Maneuver" className="replay__card">
+          {/*
+            Opens on the burn ESA actually flew (-4.0 cm/s, 50 min of lead) and
+            is draggable from there, so the historical decision is the starting
+            point of the exploration rather than the whole of it.
+          */}
+          <p className="replay__note replay__note--lead">
+            Opens on the burn ESA flew at {EXECUTED_MANEUVER.burn_time_iso}:{' '}
+            {formatDeltaV(EXECUTED_MANEUVER.delta_v_cm_s)} at{' '}
+            {EXECUTED_MANEUVER.lead_time_minutes} min of lead. The paper reports it
+            taking Pc from {formatPc(EXECUTED_MANEUVER.published_pre_burn_pc)} to{' '}
+            {formatPc(EXECUTED_MANEUVER.published_post_burn_pc)}; the figures below are
+            our own simulation, computed independently of that.
+          </p>
+          <ManeuverPlanner
+            target={maneuverTarget}
+            idleHint="Waiting for this day's screening to produce a conjunction."
+          />
         </GlassPanel>
 
         <GlassPanel title="AI decision support" className="replay__card">

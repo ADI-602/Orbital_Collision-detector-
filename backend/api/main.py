@@ -315,7 +315,12 @@ def maneuver_endpoint(req: ManeuverPhysicsRequest) -> Dict[str, Any]:
             "post_burn_pc": man_res.post_burn_pc,
             "risk_reduction_pct": man_res.risk_reduction_pct,
             "fuel_consumed_kg": man_res.fuel_consumed_kg,
+            # Two distinct facts: does the burn help, and does it finish the
+            # job. Collapsing them would either call the burn ESA actually
+            # flew "not recommended" or call a token nudge sufficient.
             "maneuver_recommended": man_res.maneuver_recommended,
+            "post_burn_below_threshold": man_res.post_burn_below_threshold,
+            "risk_threshold_pc": man_res.risk_threshold_pc,
         }
     except HTTPException:
         raise

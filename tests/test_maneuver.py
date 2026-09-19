@@ -82,6 +82,58 @@ class TestManeuverSimulation:
         assert res.fuel_consumed_kg > 0.0, "Fuel consumed should be positive"
         assert res.maneuver_recommended is True
 
+    def test_threshold_is_reported_separately_from_whether_the_burn_helps(self, envisage_tca_result):
+        """
+        "This burn helps" and "this burn resolves the conjunction" are different.
+
+        Regression: `risk_threshold_pc` was a declared, documented parameter
+        that nothing ever evaluated — the docstring claimed the recommendation
+        consulted it, and the code set the flag from `post_pc < pre_pc` alone.
+
+        It is now reported as its own field rather than folded into the
+        recommendation, because folding it in gets one of these two cases
+        wrong whichever way it goes: the -4.0 cm/s burn ESA actually flew left
+        Pc above the 1e-4 accepted level of the day and was flown regardless,
+        while a 0.5 cm/s nudge improves Pc without coming near resolving it.
+        """
+        envisat, zenith2, tca_result = envisage_tca_result
+
+        def burn(dv):
+            return simulate_maneuver(
+                primary=envisat,
+                secondary=zenith2,
+                tca_result=tca_result,
+                delta_v_cm_s=dv,
+                lead_time_minutes=50.0,
+                sat_mass_kg=8200.0,
+                isp_s=220.0,
+                hard_body_radius_km=HARD_BODY_RADIUS_KM,
+                risk_threshold_pc=1e-4,
+            )
+
+        weak = burn(-0.5)
+        # It genuinely helps, and that is reported honestly...
+        assert weak.post_burn_pc < weak.pre_burn_pc
+        assert weak.maneuver_recommended is True
+        # ...but it does not resolve the conjunction, and that is reported too.
+        assert weak.post_burn_pc > 1e-4
+        assert weak.post_burn_below_threshold is False
+
+        # The threshold actually in force is echoed back, so a caller never has
+        # to assume which value the verdict was judged against.
+        assert weak.risk_threshold_pc == 1e-4
+
+        # A prograde burn makes things worse and is not recommended at all.
+        bad = burn(4.0)
+        assert bad.post_burn_pc > bad.pre_burn_pc
+        assert bad.maneuver_recommended is False
+        assert bad.post_burn_below_threshold is False
+
+        # A large enough retrograde burn clears the threshold outright.
+        strong = burn(-8.0)
+        assert strong.maneuver_recommended is True
+        assert strong.post_burn_below_threshold is True
+
     def test_prograde_burn_increases_miss_distance(self, envisage_tca_result):
         """A +4.0 cm/s boosting burn should also alter trajectory and change miss distance."""
         envisat, zenith2, tca_result = envisage_tca_result

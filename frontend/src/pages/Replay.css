@@ -357,3 +357,10 @@
   .replay__strip { grid-template-columns: 1fr; }
   .replay__globe-note { display: none; }
 }
+
+/* Historical framing above the burn controls. */
+.replay__note--lead {
+  margin: 0 0 var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--card-border);
+}

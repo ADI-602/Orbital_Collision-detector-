@@ -52,7 +52,19 @@ import { post, NotFoundError } from './client.js'
  * @property {number} post_burn_pc
  * @property {number} risk_reduction_pct
  * @property {number} fuel_consumed_kg
- * @property {boolean} maneuver_recommended
+ * @property {boolean} maneuver_recommended    the burn REDUCES Pc. It does not
+ *   assert the residual risk is acceptable — see post_burn_below_threshold.
+ * @property {boolean} post_burn_below_threshold  post_burn_pc is under
+ *   risk_threshold_pc, i.e. the burn resolves the conjunction rather than
+ *   merely improving it.
+ * @property {number} risk_threshold_pc        the threshold that was applied
+ *
+ * NOTE on post_burn_miss_distance_m: it is the separation at the ORIGINAL TCA
+ * under the Clohessy-Wiltshire displacement (backend/physics/maneuver.py), not
+ * a re-solved closest approach. Displacement along the relative-velocity
+ * direction inflates it without reducing risk, which is why it can grow while
+ * post_burn_pc also grows. Pc is the decision quantity; render the distance as
+ * supporting detail, never as the headline.
  */
 
 const TCA_TIMEOUT_MS = 60000

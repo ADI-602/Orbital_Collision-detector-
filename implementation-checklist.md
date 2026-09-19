@@ -258,7 +258,9 @@ is outstanding.
 
 ## Phase 6 — Polish + demo prep
 
-- [ ] Visual polish pass on dashboard/globe
+- [ ] Visual polish pass on dashboard/globe — the remaining frontend work.
+      Not started. (The maneuver delta-V slider, once listed as outstanding
+      frontend work, is now built: `ManeuverPlanner` in both views.)
 - [x] `docs/validation-notes.md` written — 389 lines covering §1 frame
       transforms, §2 covariance source, §3 the Alfano case, §4 the Envisat
       replay with the published-vs-computed table, §5 the Pc formula

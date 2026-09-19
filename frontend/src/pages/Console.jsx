@@ -9,12 +9,12 @@ import Countdown from '../components/common/Countdown.jsx'
 import ErrorState from '../components/common/ErrorState.jsx'
 import GaugeCard from '../components/common/GaugeCard.jsx'
 import GlassPanel from '../components/common/GlassPanel.jsx'
-import LoadingState from '../components/common/LoadingState.jsx'
 import PillStat from '../components/common/PillStat.jsx'
 import RiskBadge from '../components/common/RiskBadge.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AiAdvisorPanel from '../components/panels/AiAdvisorPanel.jsx'
 import AssetStrip from '../components/panels/AssetStrip.jsx'
+import ManeuverPlanner from '../components/panels/ManeuverPlanner.jsx'
 import EventList from '../components/panels/EventList.jsx'
 import SelectedObjectPanel from '../components/panels/SelectedObjectPanel.jsx'
 import StatusHeader from '../components/panels/StatusHeader.jsx'
@@ -23,7 +23,7 @@ import { useHealth } from '../hooks/useHealth.js'
 import { useLiveSatellites } from '../hooks/useLiveSatellites.js'
 import { useLiveScreening } from '../hooks/useLiveScreening.js'
 import { useManeuverSim } from '../hooks/useManeuverSim.js'
-import { formatDeltaV, formatKg, formatMetres, formatPc, formatPercent } from '../lib/format.js'
+import { formatMetres, formatPc } from '../lib/format.js'
 import {
   INJECTED_DEBRIS,
   INJECTED_DESCRIPTION,
@@ -207,27 +207,32 @@ function Console({ onViewChange }) {
     return screeningInput.candidates.find((c) => c.name === activeEvent.secondary_name) ?? null
   }, [activeEvent, screeningInput])
 
-  const maneuverRequest = useMemo(() => {
+  // Just the pair and the encounter; ManeuverPlanner owns the burn itself.
+  const maneuverTarget = useMemo(() => {
     if (!activeEvent || !activeSecondary || !screeningInput) return null
     return {
       primary: screeningInput.primary,
       secondary: activeSecondary,
       tca_utc_iso: activeEvent.tca_utc_iso,
-      ...DEFAULT_BURN,
     }
   }, [activeEvent, activeSecondary, screeningInput])
 
-  const maneuver = useManeuverSim(maneuverRequest)
-  const maneuverSettled = ['done', 'empty', 'error'].includes(maneuver.status)
+  // The advisor is asked about the conjunction itself. It is deliberately not
+  // re-queried as the sliders move: an LLM round trip per drag would be slow,
+  // costly, and would leave narrative and numbers describing different burns.
+  const advisorBurn = useManeuverSim(
+    maneuverTarget ? { ...maneuverTarget, ...DEFAULT_BURN, sat_mass_kg: 8200.0 } : null,
+  )
+  const maneuverSettled = ['done', 'empty', 'error'].includes(advisorBurn.status)
 
   const aiRequest = useMemo(() => {
     if (!activeEvent || !screeningInput || !maneuverSettled) return null
     return {
       conjunction: screeningEventToConjunctionContext(activeEvent, screeningInput.primary.name),
-      maneuvers: maneuver.result ? [maneuverResultToManeuverOption(maneuver.result)] : [],
+      maneuvers: advisorBurn.result ? [maneuverResultToManeuverOption(advisorBurn.result)] : [],
       query_type: 'recommendation',
     }
-  }, [activeEvent, screeningInput, maneuverSettled, maneuver.result])
+  }, [activeEvent, screeningInput, maneuverSettled, advisorBurn.result])
 
   const ai = useAiAdvice(aiRequest)
 
@@ -423,57 +428,10 @@ function Console({ onViewChange }) {
         </GlassPanel>
 
         <GlassPanel title="Maneuver" className="console__card">
-          {maneuver.status === 'idle' && (
-            <p className="event-list__note">Select a detected conjunction to simulate a burn.</p>
-          )}
-          {maneuver.status === 'running' && <LoadingState label="Simulating burn" />}
-          {maneuver.status === 'empty' && (
-            <p className="event-list__note">
-              The maneuver endpoint found no close approach to act on for this pair.
-            </p>
-          )}
-          {maneuver.status === 'error' && (
-            <ErrorState
-              title="Maneuver simulation failed"
-              detail={maneuver.error?.detail ?? maneuver.error?.message}
-              onRetry={maneuver.refresh}
-            />
-          )}
-          {maneuver.status === 'done' && maneuver.result && (
-            <div className="console__maneuver">
-              <div className="console__feed-row">
-                <span className="console__feed-key">Burn</span>
-                <span className="console__feed-val ui-readout">
-                  {formatDeltaV(maneuver.result.delta_v_cm_s)}
-                </span>
-              </div>
-              <div className="console__feed-row">
-                <span className="console__feed-key">Miss</span>
-                <span className="console__feed-val ui-readout">
-                  {formatMetres(maneuver.result.pre_burn_miss_distance_m)} →{' '}
-                  {formatMetres(maneuver.result.post_burn_miss_distance_m)}
-                </span>
-              </div>
-              <div className="console__feed-row">
-                <span className="console__feed-key">Pc</span>
-                <span className="console__feed-val ui-readout">
-                  {formatPc(maneuver.result.pre_burn_pc)} → {formatPc(maneuver.result.post_burn_pc)}
-                </span>
-              </div>
-              <div className="console__feed-row">
-                <span className="console__feed-key">Reduction</span>
-                <span className="console__feed-val ui-readout">
-                  {formatPercent(maneuver.result.risk_reduction_pct)}
-                </span>
-              </div>
-              <div className="console__feed-row">
-                <span className="console__feed-key">Propellant</span>
-                <span className="console__feed-val ui-readout">
-                  {formatKg(maneuver.result.fuel_consumed_kg)}
-                </span>
-              </div>
-            </div>
-          )}
+          <ManeuverPlanner
+            target={maneuverTarget}
+            idleHint="Select a detected conjunction to simulate a burn against it."
+          />
         </GlassPanel>
 
         <GlassPanel title="Selected object" className="console__card">

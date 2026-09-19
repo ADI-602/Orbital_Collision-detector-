@@ -1,0 +1,160 @@
+.burn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.burn__controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.burn__control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.burn__control-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.burn__value {
+  font-size: var(--fs-body);
+}
+
+.burn__hint {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+/* A flat track with an accent thumb — the one piece of chrome in this panel
+   that is meant to invite dragging. */
+.burn__control input[type='range'] {
+  width: 100%;
+  appearance: none;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 6px;
+  }
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-void);
+    cursor: grab;
+  }
+
+  &::-moz-range-thumb {
+    width: 15px;
+    height: 15px;
+    border: 2px solid var(--bg-void);
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: grab;
+  }
+}
+
+.burn__result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  transition: opacity 0.15s ease;
+}
+
+/* Numbers for a burn other than the one the sliders show. Dimmed so the eye
+   does not read them as current, but never hidden — a blank panel mid-drag
+   would be worse than a labelled stale one. */
+.burn__result.is-stale {
+  opacity: 0.55;
+}
+
+.burn__stale {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-inner);
+  border: 1px solid var(--card-border-hover);
+  background: rgba(255, 255, 255, 0.04);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.burn__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.burn__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.burn__key {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+}
+
+.burn__val {
+  font-size: var(--fs-caption);
+  text-align: right;
+}
+
+.burn__verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Each verdict pairs a mark with words — never colour alone. */
+.burn__verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--card-border);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+}
+
+.burn__verdict--good {
+  color: var(--risk-nominal);
+  background: var(--risk-nominal-soft);
+}
+
+.burn__verdict--watch {
+  color: var(--risk-watch);
+  background: var(--risk-watch-soft);
+}
+
+.burn__verdict--bad {
+  color: var(--risk-critical);
+  background: var(--risk-critical-soft);
+}
+
+.burn__note {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  color: var(--text-faint);
+}
