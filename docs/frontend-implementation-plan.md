@@ -213,9 +213,9 @@ Maps to `implementation-checklist.md` Phase 5 items — work top to bottom:
 2. ~~Console shell + design-system components (`GlassPanel`, `RiskBadge`,
    `StatusHeader`)~~ ✅ **DONE**
 3. ~~Cesium globe rendering static/replay TLE positions~~ ✅ **DONE**
-4. ~~Event list + event detail~~ ✅ **DONE for the replay** (prediction-day
-   list + per-day detail, wired to `/api/physics/screening`). The live
-   console's own general event list is still to build.
+4. ~~Event list + event detail~~ ✅ **DONE** — the replay's prediction-day
+   list and per-day detail, and the live console's general `EventList` with
+   its LIVE/INJECTED toggle, both wired to `/api/physics/screening`.
 5. ~~T-minus countdown + "Play Envisat Scenario" driver~~ ✅ **DONE**
    (`Countdown.jsx`, `useCountdown`, `lib/countdown.js`, and the replay's
    play/pause/restart driving `useReplayClock`)
@@ -225,8 +225,15 @@ Maps to `implementation-checklist.md` Phase 5 items — work top to bottom:
 7. Maneuver simulation modal (delta-v slider) — **still to build**. The
    replay already calls `/api/physics/maneuver` for the burn ESA flew and
    renders pre/post Pc; what is missing is the interactive slider.
-8. Cosmos 2221 wired as secondary scenario
-9. Empty/loading/error states + polish pass
+8. ~~Cosmos 2221 wired as secondary scenario~~ **DROPPED** (scope decision,
+   2026-09-13 — see `implementation-checklist.md` Phase 5). Envisat as the
+   correctness proof plus live-time detection is enough; a second historical
+   scenario adds no new evidence. This also retires the Cosmos TLE-sourcing
+   item in §10 below.
+9. Empty/loading/error states ✅ **DONE** (every panel has explicit empty,
+   loading and error states; an empty screening result is rendered as a
+   finding with the window that was searched) + **polish pass still to do**
+   (Phase 6).
 
 🔒 Gate (per checklist): the full Envisat demo flow must run start-to-finish
 without manual intervention before calling Phase 5 done.
@@ -256,11 +263,10 @@ without manual intervention before calling Phase 5 done.
       `/api/physics/maneuver`~~ — **done in step 1**; both are documented in
       `docs/api_contract.md` §3.3 and §3.5 and implemented in
       `frontend/src/api/physics.js`.
-- [ ] ⚠️ **Source** a Cosmos 2221 TLE pair. This item previously assumed a
-      fixture existed to be located; it does not. `tests/fixtures/` contains
-      only `alfano_case.py` and `envisat_tles.py`, and every other
-      `cosmos`/`2221` hit in the repo is prose or a bare display string. This
-      needs a CelesTrak/Space-Track fetch plus a validation pass before step 8.
+- [~] ~~**Source** a Cosmos 2221 TLE pair~~ — **no longer needed**, the
+      scenario was dropped (see step 8). No Cosmos 2221 element set exists
+      anywhere in the repo, and sourcing one would have needed a
+      CelesTrak/Space-Track fetch plus its own validation pass.
 - [x] ~~Decide on state management approach~~ — **decided in step 1**: no
       library and no Context for now. The only shared state is health status,
       polled once in `Console` and passed down as a prop. When `EventList`
@@ -269,3 +275,29 @@ without manual intervention before calling Phase 5 done.
       `react/only-export-components` warns when a provider and its hook share
       a module. Still no external store: Zustand/Jotai/TanStack Query are
       pitch-relevant dependency decisions per CLAUDE.md, not incidental ones.
+
+
+---
+
+## 11. What is left (as of 2026-09-19)
+
+Phase 5 is complete, but that is not the same as "the frontend is finished".
+Three things from this plan were never built, and none of them is blocked:
+
+- **Maneuver delta-v slider** (step 7). Both the console and the replay call
+  `/api/physics/maneuver` and render pre/post miss distance and Pc, but for a
+  *fixed* burn (-4.0 cm/s at 50 min of lead, the one ESA flew). What is missing
+  is the interactive control that re-runs the endpoint as the operator drags —
+  the "what if we burn less?" moment the pitch describes.
+- **AI follow-up chat input** (§5). `AiAdvisorPanel` is read-only: it renders
+  the advisor's opening analysis and nothing more. The planned follow-up box
+  and suggested quick-questions do not exist.
+- **Landing / intro screen** (§5 item 1). The app opens straight into the
+  console. There is no hero, no mission branding, no entry CTA.
+
+Plus, from Phase 6: the **visual polish pass**, which is the one item of the
+three-in-Phase-6 that is frontend work.
+
+And three confirmations that need an environment the build container cannot
+provide — a GPU for the globe's rendering, an API key for the AI panel's live
+badge, and network for live screening to find a real conjunction.
