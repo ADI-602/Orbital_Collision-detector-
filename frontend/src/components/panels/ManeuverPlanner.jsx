@@ -166,10 +166,23 @@ function ManeuverPlanner({ target, satMassKg = 8200.0, idleHint }) {
                 {formatPercent(result.risk_reduction_pct)}
               </span>
             </div>
+            {/*
+              The headline is the distance the burn actually achieves. The
+              separation at the ORIGINAL TCA is shown underneath it rather
+              than instead of it: the backend evaluates the displacement at
+              that instant, and hiding the number it works from would make
+              the pipeline harder to check, not easier to read.
+            */}
             <div className="burn__row">
-              <span className="burn__key">Separation at TCA</span>
+              <span className="burn__key">Closest approach</span>
               <span className="burn__val ui-readout">
                 {formatMetres(result.pre_burn_miss_distance_m)} →{' '}
+                {formatMetres(result.post_burn_min_distance_m)}
+              </span>
+            </div>
+            <div className="burn__row burn__row--sub">
+              <span className="burn__key">…at the pre-burn TCA</span>
+              <span className="burn__val ui-readout">
                 {formatMetres(result.post_burn_miss_distance_m)}
               </span>
             </div>
@@ -205,11 +218,17 @@ function ManeuverPlanner({ target, satMassKg = 8200.0, idleHint }) {
           </div>
 
           <p className="burn__note">
-            Separation is measured at the original time of closest approach under a
-            Clohessy-Wiltshire displacement — shifting along the relative-velocity
-            direction increases it without reducing risk, which is why it can rise
-            while Pc does too. Pc is the quantity to decide on. Instantaneous ΔV
-            only: no burn duration, attitude or thruster dynamics are modelled.
+            The burn is modelled as a Clohessy-Wiltshire displacement evaluated at
+            the pre-burn TCA, not re-propagated. Because an along-track burn moves
+            the satellite mostly along its own velocity, the separation at that
+            instant overstates what the burn achieves — here by{' '}
+            {formatMetres(
+              result.post_burn_miss_distance_m - result.post_burn_min_distance_m,
+            )}
+            . Pc is unaffected either way: the encounter-plane method projects out
+            the along-velocity component, so it is the quantity to decide on.
+            Instantaneous ΔV only — no burn duration, attitude or thruster
+            dynamics are modelled.
           </p>
         </div>
       )}

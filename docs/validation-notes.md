@@ -354,6 +354,42 @@ All 4 prediction days pass test assertions. Refined TCA: 2004-10-22 05:10:37 UTC
 
 ---
 
+## 4.5 Maneuver stage: where the post-burn TCA sits
+
+`backend/physics/maneuver.py` applies a Clohessy–Wiltshire displacement evaluated **once, at the pre-burn TCA**, rather than re-propagating the burned trajectory (see `docs/physics-notes.md` Stage 7 for why). An along-track burn moves the primary mostly along its own velocity, so the post-burn closest approach does not happen at that instant.
+
+The offset is tens of milliseconds — but at ~14.8 km/s relative speed, that is hundreds of metres along the relative path. Measured across all four prediction days:
+
+| Day | ΔV | At pre-burn TCA | True closest approach | Overstated by | Offset |
+|---|---|---|---|---|---|
+| Oct 19 | −4.0 cm/s | 598.4 m | 480.1 m | 118.3 m (20%) | −24.2 ms |
+| Oct 19 | −8.0 cm/s | 954.7 m | 635.7 m | 319.0 m (33%) | −48.2 ms |
+| Oct 20 | −4.0 cm/s | 502.7 m | 360.1 m | 142.6 m (28%) | −23.7 ms |
+| Oct 20 | −8.0 cm/s | 868.2 m | 505.5 m | 362.7 m (42%) | −47.8 ms |
+| Oct 21 | −4.0 cm/s | 456.9 m | 310.5 m | 146.4 m (32%) | −22.7 ms |
+| Oct 21 | −8.0 cm/s | 835.0 m | 469.8 m | 365.2 m (44%) | −46.7 ms |
+| Oct 22 | −4.0 cm/s | 556.2 m | 427.5 m | 128.7 m (23%) | −24.1 ms |
+| Oct 22 | −8.0 cm/s | 921.9 m | 587.0 m | 335.0 m (36%) | −48.1 ms |
+
+Reporting only the left-hand column would tell an operator the burn bought 20–44% more clearance than it did. Both are now returned — `post_burn_miss_distance_m` and `post_burn_min_distance_m` — and the UI leads with the true closest approach.
+
+**Pc is unaffected and receives no correction.** `compute_pc` projects onto the B-plane with `P = I − v̂v̂ᵀ`, which removes exactly the along-relative-velocity component that a fixed TCA instant gets wrong. Sliding the encounter to the true minimum changes Pc by ~7×10⁻¹² relative — floating-point noise:
+
+```
+t*                 = -0.052 ms
+separation at TCA  = 268.043 m
+separation at t*   = 268.042 m
+Pc at TCA          = 6.590528253408e-04
+Pc at t*           = 6.590528253359e-04
+relative change    = 7.377e-12
+```
+
+This is the reassuring half of the finding: the number the decision rests on was never affected. Only the reported separation was optimistic.
+
+**Pinned by:** `tests/test_maneuver.py::TestPostBurnClosestApproach` — five cases covering the ordering of the two distances, the size of the gap, the offset bound, the zero-burn collapse, and the Pc invariance above.
+
+---
+
 ## 5. Pc Formula Reference
 
 ### 5.1 Method used: Foster/Chan/Alfano B-plane (2D encounter-plane)

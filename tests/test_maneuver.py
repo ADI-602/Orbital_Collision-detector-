@@ -192,3 +192,104 @@ class TestManeuverSimulation:
         )
 
         assert 0.10 <= res.fuel_consumed_kg <= 0.25, f"Expected ~0.15 kg fuel, got {res.fuel_consumed_kg:.4f} kg"
+
+
+class TestPostBurnClosestApproach:
+    """
+    The post-burn closest approach is not at the pre-burn TCA.
+
+    maneuver.py evaluates the Clohessy-Wiltshire displacement once, at the
+    pre-burn TCA. An along-track burn moves the primary mostly along its own
+    velocity, so the separation measured at that instant sits off to one side
+    of the new minimum and reads high. These tests pin the relationship
+    between the two numbers, and pin the fact that Pc is untouched by it.
+    """
+
+    def test_min_distance_is_never_greater_than_at_tca_separation(self, envisage_tca_result):
+        envisat, zenith2, tca = envisage_tca_result
+        for dv in (-8.0, -4.0, -0.5, 4.0):
+            res = simulate_maneuver(envisat, zenith2, tca, delta_v_cm_s=dv,
+                                    lead_time_minutes=50.0)
+            assert res.post_burn_min_distance_m <= res.post_burn_miss_distance_m + 1e-6, (
+                f"ΔV={dv}: the true minimum cannot exceed the separation at an "
+                f"arbitrary other instant on the same relative path"
+            )
+
+    def test_the_gap_is_large_enough_to_matter(self, envisage_tca_result):
+        """
+        Not a rounding error: at the burn ESA flew, reporting the at-TCA
+        separation overstates what the burn achieved by >100 m. If this ever
+        shrinks to nothing, the two numbers have stopped being distinct and
+        something upstream has changed.
+        """
+        envisat, zenith2, tca = envisage_tca_result
+        res = simulate_maneuver(envisat, zenith2, tca, delta_v_cm_s=-4.0,
+                                lead_time_minutes=50.0)
+        overstatement_m = res.post_burn_miss_distance_m - res.post_burn_min_distance_m
+        assert 50.0 < overstatement_m < 400.0, overstatement_m
+
+    def test_closest_approach_is_within_a_second_of_the_original_tca(self, envisage_tca_result):
+        """
+        A small burn shifts the encounter by milliseconds, not minutes. A large
+        offset would mean the straight-line refinement had been applied to a
+        geometry it does not describe.
+        """
+        envisat, zenith2, tca = envisage_tca_result
+        res = simulate_maneuver(envisat, zenith2, tca, delta_v_cm_s=-4.0,
+                                lead_time_minutes=50.0)
+        assert abs(res.post_burn_tca_offset_s) < 1.0
+
+    def test_zero_burn_leaves_both_distances_at_the_unmaneuvered_miss(self, envisage_tca_result):
+        """
+        With no burn there is no displacement, so the pre-burn TCA already IS
+        the closest approach and both readings must collapse onto it.
+        """
+        envisat, zenith2, tca = envisage_tca_result
+        res = simulate_maneuver(envisat, zenith2, tca, delta_v_cm_s=0.0,
+                                lead_time_minutes=50.0)
+        assert res.post_burn_miss_distance_m == pytest.approx(
+            res.pre_burn_miss_distance_m, abs=1e-6)
+        assert res.post_burn_min_distance_m == pytest.approx(
+            res.pre_burn_miss_distance_m, rel=1e-3)
+
+    def test_pc_does_not_depend_on_which_instant_the_encounter_is_measured_at(
+        self, envisage_tca_result, ts
+    ):
+        """
+        The reason no correction is applied to Pc.
+
+        compute_pc projects onto the B-plane with P = I - v_hat v_hat^T, which
+        removes exactly the along-relative-velocity component that a fixed TCA
+        instant gets wrong. Sliding both objects along their own velocities to
+        the true minimum must therefore leave Pc unchanged.
+        """
+        from backend.physics.collision_probability import (
+            compute_pc, _tle_covariance_rtn, covariance_rtn_to_eci)
+        from backend.physics.frames import StateVectorECI
+        from backend.physics.screening import _orbital_elements_from_tle
+
+        envisat, zenith2, tca = envisage_tca_result
+        s1, s2 = tca.state1_eci, tca.state2_eci
+
+        el1 = _orbital_elements_from_tle(envisat)
+        el2 = _orbital_elements_from_tle(zenith2)
+        c1 = covariance_rtn_to_eci(
+            _tle_covariance_rtn(el1["inclination_deg"], el1["perigee_alt_km"], el1["eccentricity"]),
+            s1.pos_eci_km, s1.vel_eci_km_s)
+        c2 = covariance_rtn_to_eci(
+            _tle_covariance_rtn(el2["inclination_deg"], el2["perigee_alt_km"], el2["eccentricity"]),
+            s2.pos_eci_km, s2.vel_eci_km_s)
+
+        rel_r = s2.pos_eci_km - s1.pos_eci_km
+        rel_v = s2.vel_eci_km_s - s1.vel_eci_km_s
+        t_star = -float(rel_r @ rel_v) / float(rel_v @ rel_v)
+
+        at_tca = compute_pc(s1, s2, c1, c2, HARD_BODY_RADIUS_KM)
+        slid = compute_pc(
+            StateVectorECI(s1.epoch, s1.pos_eci_km + s1.vel_eci_km_s * t_star,
+                           s1.vel_eci_km_s, s1.satellite_name),
+            StateVectorECI(s2.epoch, s2.pos_eci_km + s2.vel_eci_km_s * t_star,
+                           s2.vel_eci_km_s, s2.satellite_name),
+            c1, c2, HARD_BODY_RADIUS_KM)
+
+        assert slid == pytest.approx(at_tca, rel=1e-9)

@@ -122,12 +122,36 @@ The part most likely to draw a hard technical question. Understand the _shape_ o
 
 ## Stage 7 — Maneuver modeling
 
-**What it does:** applies an instantaneous delta-V (velocity change) at a chosen point before TCA, re-propagates, and recomputes miss distance/Pc for the new trajectory — compared against the original.
+**What it does:** applies an instantaneous along-track delta-V at a chosen lead time before TCA and recomputes miss distance/Pc for the displaced trajectory — compared against the original.
 
-**Know before coding:**
+> **Corrected 2026-09-21.** This section previously said the burn was re-propagated: "perturb the velocity component of the state vector at the chosen pre-TCA time, then re-run propagation → frame transform → TCA/Pc for the new trajectory." That is not what `backend/physics/maneuver.py` does, and never was. The description below matches the code.
 
-- This reuses Stage 2/3 machinery again: perturb the velocity component of the state vector at the chosen pre-TCA time, then re-run propagation → frame transform → TCA/Pc for the new trajectory. It is not a separate physics model.
-- **Honest scope, already documented in `CLAUDE.md` 1.4:** this does not model real thruster burn dynamics, fuel consumption, burn duration, or attitude control. State this plainly wherever the feature is described — the risk isn't that it's simplified, it's presenting it as more complete than it actually is.
+**How it actually works:**
+
+- The burn is **not** re-propagated through SGP4. The displacement at TCA is obtained in closed form from the **Hill–Clohessy–Wiltshire linearised relative-motion equations**, evaluated once at the pre-burn TCA instant and added to the primary's state there:
+
+  ```
+  Δr_R(Δt) = (2/n)(1 − cos nΔt) Δv_T
+  Δr_T(Δt) = (1/n)(4 sin nΔt − 3nΔt) Δv_T
+  Δr_N(Δt) = 0
+  ```
+
+  with `n = √(μ/a³)` and `Δt` the lead time. This is exact for small impulsive burns (|Δv| < 1 m/s) applied within about one orbit of TCA, and is what operational screening systems use for this purpose (ESA CRASS, NASA CARA).
+
+- Choosing CW over re-propagation is deliberate, not a shortcut avoided for effort: the maneuver planner in the UI re-queries this endpoint on every slider drag, and a full re-propagate-and-re-solve-TCA cycle per drag would be far too slow to be interactive. The linearisation is valid in exactly the regime the tool operates in.
+
+**The one thing this costs, and how it is handled:**
+
+- An along-track burn moves the primary mostly **along its own velocity**, so the post-burn closest approach does not occur at the pre-burn TCA. It is displaced by only a few tens of milliseconds — but at ~15 km/s relative speed, tens of milliseconds are hundreds of metres of travel along the relative path.
+- So the separation measured *at the old TCA* **overstates what the burn achieves**. Measured on the Envisat case: **120–150 m too high at −4 cm/s, and 320–365 m too high at −8 cm/s** — 25–40% of the reported value. That is not a rounding error, and reporting it alone would tell an operator the burn bought more clearance than it did.
+- `simulate_maneuver` therefore returns both: `post_burn_miss_distance_m` (separation at the pre-burn TCA, where the displacement was evaluated) and `post_burn_min_distance_m` (the true post-burn closest approach). The latter is refined with the same straight-line geometry the B-plane method already assumes — `t* = −(r·v)/(v·v)` — so it costs three lines of linear algebra and no re-propagation. The UI leads with it.
+
+**Pc is not affected by any of this, and gets no correction.**
+
+- `compute_pc` projects onto the B-plane with `P = I − v̂v̂ᵀ`, which removes precisely the along-relative-velocity component that a fixed TCA instant gets wrong. Sliding the encounter to the true minimum changes Pc by ~1×10⁻¹¹ relative — floating-point noise.
+- This is worth stating plainly because it is the reassuring half of the finding: the number the whole decision rests on was never wrong. Only the reported separation was optimistic. Pinned by `tests/test_maneuver.py::TestPostBurnClosestApproach`.
+
+**Honest scope, already documented in `CLAUDE.md` 1.4:** this does not model thruster burn dynamics, burn duration, or attitude control. Propellant mass is a Tsiolkovsky estimate from the ΔV magnitude, not a modelled consumption. State this plainly wherever the feature is described — the risk isn't that it's simplified, it's presenting it as more complete than it actually is.
 
 ---
 

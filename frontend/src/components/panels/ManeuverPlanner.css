@@ -158,3 +158,16 @@
   line-height: 1.6;
   color: var(--text-faint);
 }
+
+/* Secondary reading under its headline: the same fact measured somewhere
+   else, indented so it reads as a qualification rather than a second result. */
+.burn__row--sub {
+  margin-top: calc(var(--space-1) * -1);
+  padding-left: var(--space-3);
+}
+
+.burn__row--sub .burn__key,
+.burn__row--sub .burn__val {
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}

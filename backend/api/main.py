@@ -310,7 +310,11 @@ def maneuver_endpoint(req: ManeuverPhysicsRequest) -> Dict[str, Any]:
             "delta_v_cm_s": man_res.delta_v_cm_s,
             "lead_time_minutes": man_res.lead_time_minutes,
             "pre_burn_miss_distance_m": man_res.pre_burn_miss_distance_m,
+            # Separation at the pre-burn TCA, kept for continuity. The number
+            # that says what the burn achieved is post_burn_min_distance_m.
             "post_burn_miss_distance_m": man_res.post_burn_miss_distance_m,
+            "post_burn_min_distance_m": man_res.post_burn_min_distance_m,
+            "post_burn_tca_offset_s": man_res.post_burn_tca_offset_s,
             "pre_burn_pc": man_res.pre_burn_pc,
             "post_burn_pc": man_res.post_burn_pc,
             "risk_reduction_pct": man_res.risk_reduction_pct,

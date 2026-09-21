@@ -65,6 +65,27 @@ How to use this file: check items off as they're genuinely done (validated, not 
 ## Phase 4 — Decision support (maneuver + AI layer)
 
 - [x] `backend/physics/maneuver.py` — instantaneous delta-V modeling, pre/post-maneuver Pc comparison
+      **Corrected 2026-09-21: the reported post-burn separation was optimistic.**
+      `docs/physics-notes.md` Stage 7 claimed the burn was re-propagated and TCA
+      re-solved; the code has always used a Clohessy-Wiltshire displacement
+      evaluated once at the PRE-burn TCA. Chasing that discrepancy showed it was
+      not only a documentation error: because an along-track burn moves the
+      satellite mostly along its own velocity, the post-burn closest approach
+      lands tens of milliseconds off the old TCA — and at ~14.8 km/s that is
+      hundreds of metres. The separation reported at the old TCA overstated what
+      the burn achieved by **118-365 m across the four prediction days (20-44%)**.
+      `simulate_maneuver` now returns `post_burn_min_distance_m` (the distance
+      the burn actually achieves, refined via t* = -(r·v)/(v·v), no
+      re-propagation needed) alongside the original `post_burn_miss_distance_m`,
+      and the UI leads with it.
+      **Pc was never affected and got no correction** — `compute_pc` projects
+      onto the B-plane with P = I - v̂v̂ᵀ, which removes exactly the
+      along-velocity component a fixed TCA instant gets wrong; sliding the
+      encounter to the true minimum moves Pc by ~7e-12 relative. The decision
+      number was always right; only the reported clearance was generous.
+      **Validated by:** `tests/test_maneuver.py::TestPostBurnClosestApproach`
+      (5 cases, including the Pc-invariance proof), measured table in
+      `docs/validation-notes.md` §4.5, suite 63/63.
 - [x] `backend/ai/schema.py` — structured input/output contracts (pydantic models) for the AI layer
 - [x] `backend/ai/prompts.py` — versioned prompt templates (explanation / tradeoff / recommendation)
 - [x] `backend/ai/advisor.py` — Claude API integration with strict numerical integrity enforcement

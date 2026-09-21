@@ -20,6 +20,28 @@ Physics Formulation:
   shortly before TCA (Δt < 1 orbit ~ 100 min), matching industry practice
   (ESA CRASS, NASA CARA, JSpOC).
 
+  The burn is NOT re-propagated through SGP4. The CW displacement is evaluated
+  once, at the pre-burn TCA instant, and added to the primary's state there.
+
+Why the pre-burn TCA instant is not the post-burn closest approach:
+  An along-track burn moves the primary mostly along its own velocity, so the
+  post-burn closest approach happens a few tens of milliseconds away from the
+  original TCA. At ~15 km/s relative speed those milliseconds are hundreds of
+  metres of travel, so the separation measured AT the old TCA overstates what
+  the burn actually achieves — by 120-150 m at -4 cm/s and 320-365 m at
+  -8 cm/s for the Envisat case (see docs/validation-notes.md).
+
+  Both numbers are therefore reported: `post_burn_miss_distance_m` is the
+  separation at the pre-burn TCA, and `post_burn_min_distance_m` is the true
+  post-burn closest approach, refined by the same straight-line geometry the
+  B-plane method already assumes. No re-propagation is needed for it.
+
+  Pc needs no such correction and gets none. compute_pc projects onto the
+  B-plane with P = I - v_hat v_hat^T, which removes exactly the
+  along-relative-velocity component that the fixed-TCA instant gets wrong;
+  sliding the encounter to the true minimum changes Pc by ~1e-11 relative,
+  i.e. not at all. The collision probability is unaffected by this choice.
+
 Units:
   - Position: km, meters for reporting
   - Velocity: km/s, cm/s for burn input
@@ -57,7 +79,14 @@ class ManeuverResult:
         delta_v_cm_s:              Applied along-track maneuver magnitude [cm/s].
         lead_time_minutes:         Burn lead time before TCA [minutes].
         pre_burn_miss_distance_m:  Miss distance before burn [meters].
-        post_burn_miss_distance_m: Miss distance after burn [meters].
+        post_burn_miss_distance_m: Separation after the burn measured AT the
+                                   pre-burn TCA instant [meters]. Optimistic —
+                                   see post_burn_min_distance_m.
+        post_burn_min_distance_m:  True post-burn closest approach [meters].
+                                   This is the distance the burn achieves.
+        post_burn_tca_offset_s:    How far the post-burn closest approach sits
+                                   from the pre-burn TCA [seconds]; negative is
+                                   earlier. Tens of milliseconds in practice.
         pre_burn_pc:               Collision probability before burn.
         post_burn_pc:              Collision probability after burn.
         risk_reduction_pct:        Percentage reduction in Pc.
@@ -75,6 +104,8 @@ class ManeuverResult:
     lead_time_minutes: float
     pre_burn_miss_distance_m: float
     post_burn_miss_distance_m: float
+    post_burn_min_distance_m: float
+    post_burn_tca_offset_s: float
     pre_burn_pc: float
     post_burn_pc: float
     risk_reduction_pct: float
@@ -89,7 +120,8 @@ class ManeuverResult:
             f"sat={self.primary_name!r}, "
             f"ΔV={self.delta_v_cm_s:+.1f} cm/s, "
             f"lead={self.lead_time_minutes:.1f}m, "
-            f"miss: {self.pre_burn_miss_distance_m:.1f}m -> {self.post_burn_miss_distance_m:.1f}m, "
+            f"miss: {self.pre_burn_miss_distance_m:.1f}m -> {self.post_burn_min_distance_m:.1f}m "
+            f"(at old TCA {self.post_burn_miss_distance_m:.1f}m), "
             f"Pc: {self.pre_burn_pc:.2e} -> {self.post_burn_pc:.2e} "
             f"[{self.risk_reduction_pct:.1f}% reduction], "
             f"fuel={self.fuel_consumed_kg:.3f} kg)"
@@ -181,11 +213,40 @@ def simulate_maneuver(
         satellite_name=f"{primary.name} (Post-Maneuver)",
     )
 
-    # 6. Post-burn miss distance at TCA
+    # 6. Post-burn separation, at two instants.
+    #
+    # (a) At the pre-burn TCA, which is where the CW displacement was
+    #     evaluated. This is what the module used to report on its own.
     new_rel_pos_km = state2_eci.pos_eci_km - new_pos1_eci_km
     post_miss_km = float(np.linalg.norm(new_rel_pos_km))
     post_miss_m = post_miss_km * 1000.0
     pre_miss_m = tca_result.miss_distance_km * 1000.0
+
+    # (b) At the post-burn closest approach, which is the distance the burn
+    #     actually achieves. An along-track burn displaces the primary mostly
+    #     along its own velocity, so (a) is measured off to one side of the
+    #     new minimum and reads high.
+    #
+    #     Over the milliseconds involved the relative path is straight to far
+    #     better than the CW linearisation itself, so the minimum is the
+    #     perpendicular distance from the origin to that line — the same
+    #     assumption the B-plane Pc method already makes. Solving
+    #     d/dt |r + v t|^2 = 0 gives t* = -(r . v) / (v . v).
+    new_rel_vel_km_s = state2_eci.vel_eci_km_s - new_vel1_eci_km_s
+    rel_speed_sq = float(new_rel_vel_km_s @ new_rel_vel_km_s)
+    if rel_speed_sq <= 0.0:
+        # Zero relative velocity has no encounter plane and no closest
+        # approach in time; compute_pc rejects it below for the same reason.
+        # Raising here rather than quietly returning the at-TCA value keeps a
+        # degenerate pair from being reported as an ordinary result.
+        raise ValueError(
+            f"post-burn relative velocity is zero for {primary.name} vs "
+            f"{secondary.name}; no closest approach is defined"
+        )
+    post_tca_offset_s = -float(new_rel_pos_km @ new_rel_vel_km_s) / rel_speed_sq
+    post_min_m = float(
+        np.linalg.norm(new_rel_pos_km + new_rel_vel_km_s * post_tca_offset_s)
+    ) * 1000.0
 
     # 7. Compute pre and post burn Pc
     elem1 = _orbital_elements_from_tle(primary)
@@ -231,9 +292,11 @@ def simulate_maneuver(
 
     logger.info(
         "simulate_maneuver: %s burn ΔV=%.1f cm/s at lead=%.1fm | "
-        "miss: %.1fm -> %.1fm | Pc: %.2e -> %.2e (%.1f%% reduction) | fuel: %.3f kg",
+        "miss: %.1fm -> %.1fm (at old TCA %.1fm, offset %+.1f ms) | "
+        "Pc: %.2e -> %.2e (%.1f%% reduction) | fuel: %.3f kg",
         primary.name, delta_v_cm_s, lead_time_minutes,
-        pre_miss_m, post_miss_m, pre_pc, post_pc, risk_reduction_pct, fuel_consumed_kg,
+        pre_miss_m, post_min_m, post_miss_m, post_tca_offset_s * 1000.0,
+        pre_pc, post_pc, risk_reduction_pct, fuel_consumed_kg,
     )
 
     return ManeuverResult(
@@ -243,6 +306,8 @@ def simulate_maneuver(
         lead_time_minutes=lead_time_minutes,
         pre_burn_miss_distance_m=pre_miss_m,
         post_burn_miss_distance_m=post_miss_m,
+        post_burn_min_distance_m=post_min_m,
+        post_burn_tca_offset_s=post_tca_offset_s,
         pre_burn_pc=pre_pc,
         post_burn_pc=post_pc,
         risk_reduction_pct=risk_reduction_pct,
