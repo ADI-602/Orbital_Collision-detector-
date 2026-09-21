@@ -186,10 +186,12 @@
   min-height: 0;
 }
 
+/* Top-left rather than bottom-left: Cesium's required attribution occupies
+   the bottom-left of the canvas and the two overlapped. */
 .replay__hud {
   position: absolute;
   left: var(--space-4);
-  bottom: var(--space-4);
+  top: var(--space-4);
   display: flex;
   align-items: center;
   gap: var(--space-4);
@@ -241,15 +243,18 @@
 }
 
 /* States plainly that the globe is a visualisation, not a measurement. */
+/* Over a star field, a translucent panel with no edge reads as text someone
+   forgot to style. The hairline is what makes it a deliberate caption. */
 .replay__globe-note {
   position: absolute;
   right: var(--space-4);
   top: var(--space-4);
   margin: 0;
   max-width: 30ch;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3);
   border-radius: var(--radius-inner);
-  background: rgba(5, 5, 5, 0.55);
+  border: 1px solid var(--card-border);
+  background: rgba(5, 5, 5, 0.72);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   font-family: var(--font-sans);

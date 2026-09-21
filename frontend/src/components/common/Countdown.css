@@ -1,8 +1,8 @@
+/* Padding is the surrounding GlassPanel's job — see GaugeCard.css. */
 .countdown {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4);
 }
 
 /*

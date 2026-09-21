@@ -1,7 +1,13 @@
+/*
+ * Fixed-height HUD: the page itself never scrolls, only the regions that say
+ * they do. The strip row is capped rather than `auto` — an AI response of
+ * unbounded length was taking a third of the viewport and squeezing the rails
+ * down to where the maneuver planner fell off the bottom of the screen.
+ */
 .console {
   display: grid;
   grid-template-columns: 260px 1fr 320px;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto minmax(0, 1fr) minmax(0, auto);
   grid-template-areas:
     'header header header'
     'banner banner banner'
@@ -11,6 +17,7 @@
   height: 100%;
   min-height: 0;
   padding: var(--space-3);
+  overflow: hidden;
 }
 
 .console__header { grid-area: header; }
@@ -20,13 +27,17 @@
 .console__rail-right { grid-area: right; }
 .console__strip { grid-area: strip; }
 
+/* Rails carry more than fits at 1080p by design — the fix is not to hide the
+   overflow but to make it legible (see .ui-scroll in tokens.css), and to put
+   the panels a judge must see without touching anything at the top. */
 .console__rail-left,
 .console__rail-right {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   min-height: 0;
-  overflow: auto;
+  /* Room for the persistent scrollbar so it never sits on top of content. */
+  padding-right: var(--space-2);
 }
 
 .console__card {
@@ -45,11 +56,13 @@
 }
 
 /* HUD overlaid on the globe canvas rather than docked beside it — the globe
-   is the hero, and chrome floats over it. */
+   is the hero, and chrome floats over it. Top-left rather than bottom-left,
+   because Cesium renders its required attribution in the bottom-left corner
+   of the canvas and the two were sitting on top of each other. */
 .console__stage-hud {
   position: absolute;
   left: var(--space-4);
-  bottom: var(--space-4);
+  top: var(--space-4);
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
@@ -97,9 +110,13 @@
   font-size: var(--fs-caption);
 }
 
+.console__strip {
+  min-height: 0;
+}
+
 .console__strip-inner {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(280px, 420px);
   align-items: center;
   gap: var(--space-5);
 }
@@ -145,11 +162,18 @@
 
   .console__stage { min-height: 380px; }
 
+  /* Below the projector width the rails lay out horizontally, so the vertical
+     scroll affordance would be pointing the wrong way. */
   .console__rail-left,
   .console__rail-right {
     flex-direction: row;
     overflow-x: auto;
+    overflow-y: visible;
+    mask-image: none;
+    animation: none;
   }
+
+  .console__strip-ai { max-height: 240px; }
 
   .console__rail-left > *,
   .console__rail-right > * {
@@ -207,6 +231,14 @@
   color: var(--text-primary);
 }
 
+/* The INJECTED toggle is the one control that changes what the numbers mean,
+   so when it is on it says so in the provenance colour, not in chrome grey. */
+.console__mode--injected.is-active {
+  background: var(--provenance-soft);
+  border-color: var(--provenance-border);
+  color: var(--provenance);
+}
+
 /*
  * The injected banner. Deliberately loud relative to the rest of the console's
  * restraint: everything downstream of it is computed from objects that do not
@@ -216,16 +248,23 @@
   margin: 0 0 var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-inner);
-  border: 1px solid var(--risk-watch);
-  background: var(--risk-watch-soft);
+  border: 1px solid var(--provenance-border);
+  background: var(--provenance-soft);
   font-family: var(--font-sans);
   font-size: var(--fs-micro);
   line-height: 1.5;
   color: var(--text-secondary);
+  /* Hatching carries the same "not real data" message to a viewer who cannot
+     separate the hue from the risk scale, and to a greyscale projector. */
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--provenance-soft) 0 6px,
+    transparent 6px 12px
+  );
 }
 
 .console__injected-note strong {
-  color: var(--risk-watch);
+  color: var(--provenance);
   letter-spacing: 0.06em;
 }
 
@@ -237,11 +276,6 @@
   margin-bottom: var(--space-3);
 }
 
-.console__threat {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-2) 0;
-}
 
 .console__maneuver {
   display: flex;
@@ -249,11 +283,14 @@
   gap: var(--space-2);
 }
 
+/*
+ * The advisor's narrative is the one panel whose length the UI does not
+ * control — it is model output. Capped here and scrolled internally so a long
+ * answer costs the advisor's own box and nothing else on screen.
+ */
 .console__strip-ai {
-  min-width: 260px;
-  max-width: 420px;
-  max-height: 260px;
-  overflow-y: auto;
+  align-self: stretch;
+  max-height: 168px;
 }
 
 .console__strip-ai .ai-panel {

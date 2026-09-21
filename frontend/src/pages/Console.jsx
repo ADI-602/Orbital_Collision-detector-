@@ -39,10 +39,11 @@ import './Console.css'
 const LIVE_SEARCH_HOURS = 24
 
 /**
- * The burn to simulate for a detected event. -4 cm/s at 50 min of lead is the
- * manoeuvre ESA actually flew for the Envisat conjunction, used here as a
- * representative retrograde burn rather than an optimised one — the slider
- * that makes it adjustable is still to build.
+ * The burn the ADVISOR is asked about: -4 cm/s at 50 min of lead, the
+ * manoeuvre ESA actually flew for the Envisat conjunction. It is fixed on
+ * purpose. ManeuverPlanner's sliders explore the burn space separately, and
+ * re-querying the model on every drag would leave the narrative describing a
+ * burn the panel is no longer showing.
  */
 const DEFAULT_BURN = { delta_v_cm_s: -4.0, lead_time_minutes: 50.0 }
 
@@ -261,7 +262,7 @@ function Console({ onViewChange }) {
       )}
 
       {/* --- Left rail ---------------------------------------------------- */}
-      <div className="console__rail-left">
+      <div className="console__rail-left ui-scroll">
         <GlassPanel
           title="Conjunction screening"
           className="console__card"
@@ -277,7 +278,7 @@ function Console({ onViewChange }) {
               </button>
               <button
                 type="button"
-                className={`console__mode ${mode === 'injected' ? 'is-active' : ''}`}
+                className={`console__mode console__mode--injected ${mode === 'injected' ? 'is-active' : ''}`}
                 onClick={() => { setMode('injected'); setSelectedEventName(null) }}
                 aria-pressed={mode === 'injected'}
                 title={INJECTED_DESCRIPTION}
@@ -386,8 +387,12 @@ function Console({ onViewChange }) {
       </div>
 
       {/* --- Right rail ---------------------------------------------------- */}
-      <div className="console__rail-right">
-        <GlassPanel title="Conjunction risk" className="console__card">
+      <div className="console__rail-right ui-scroll">
+        <GlassPanel
+          title="Conjunction risk"
+          className="console__card"
+          actions={activeEvent ? <RiskBadge level={activeEvent.threat_level} /> : null}
+        >
           {/*
             Pc is shown on a log gauge because probability spans decades: on a
             linear scale every value the pipeline produces would pin to zero.
@@ -404,15 +409,9 @@ function Console({ onViewChange }) {
             footnote={
               activeEvent
                 ? `Miss distance ${formatMetres(activeEvent.miss_distance_m)} at ${activeEvent.relative_speed_km_s.toFixed(2)} km/s`
-                : 'No conjunction found. Nothing crossed the screening threshold in the searched window.'
+                : 'Nothing crossed the screening threshold in the searched window.'
             }
           />
-
-          {activeEvent && (
-            <div className="console__threat">
-              <RiskBadge level={activeEvent.threat_level} />
-            </div>
-          )}
 
           {/*
             Counts against real UTC, not the globe's x120 simulated clock: a
@@ -423,7 +422,7 @@ function Console({ onViewChange }) {
           <Countdown
             targetUtc={activeEvent?.tca_utc_iso ?? null}
             tone={eventTone}
-            emptyHint="No conjunction found in the searched window, so there is no time of closest approach to count to."
+            emptyHint="No closest approach to count to."
           />
         </GlassPanel>
 
@@ -465,7 +464,7 @@ function Console({ onViewChange }) {
               />
             </div>
 
-            <div className="console__strip-ai">
+            <div className="console__strip-ai ui-scroll">
               <AiAdvisorPanel
                 status={ai.status}
                 advice={ai.advice}

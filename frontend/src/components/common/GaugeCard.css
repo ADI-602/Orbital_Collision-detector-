@@ -1,9 +1,11 @@
+/* No padding of its own: every call site wraps this in a GlassPanel, whose
+   body already pads, and the two were stacking into ~32px of dead margin on
+   each edge of every gauge in the rails. */
 .gauge-card {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4);
 }
 
 .gauge-card__label {

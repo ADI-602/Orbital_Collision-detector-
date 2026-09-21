@@ -226,14 +226,26 @@ How to use this file: check items off as they're genuinely done (validated, not 
       real fetched candidate set is the remaining confirmation.
 
 🔒 **Gate: full Envisat demo flow must run start-to-finish without manual
-intervention before Phase 6 starts.** ⏳ NOT YET PASSED — the flow does run
-start-to-finish unattended, but two surfaces remain unconfirmed because this
-container has neither WebGL nor an AI key. To close it, run the replay view
-once on a machine with a GPU and confirm (a) both objects and the conjunction
-line render on the globe against the replay clock, and (b) with a
-`GEMINI_API_KEY`/`GOOGLE_API_KEY` exported into the uvicorn process, the AI
-panel's badge reads "AI · live model" rather than the fallback. Nothing else
-is outstanding.
+intervention before Phase 6 starts.** ⏳ ONE ITEM LEFT.
+
+- (a) **Globe rendering — CONFIRMED (2026-09-21).** Chromium renders WebGL in
+      this container after all, via ANGLE's SwiftShader software rasteriser
+      (`--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader`);
+      the earlier "no WebGL here" note was wrong about the environment, not
+      about the code. Both views were captured live: the console globe with
+      ISS (ZARYA) and CSS (TIANHE) tracked against the x120 sim clock, and the
+      replay globe with ENVISAT and ZENITH-2 DEBRIS against the x60 replay
+      clock. Software rasterisation is slower than a GPU but renders the same
+      scene, so this confirms the scene graph, not the frame rate.
+- (b) **AI live-model badge — still unconfirmed.** No API key in this
+      container, so only the rule-based fallback path has been exercised (the
+      badge correctly reads "AI · RULE-BASED FALLBACK"). To close: export
+      `GEMINI_API_KEY`/`GOOGLE_API_KEY` into the uvicorn process and confirm
+      the badge reads "AI · live model".
+
+The conjunction line was not in frame in the captures above — at the replay
+times sampled, the two objects are far apart on opposite sides of the globe.
+Worth eyeballing once near TCA during rehearsal.
 
 > ✅ **RESOLVED (2026-08-31).** The close-approach search returned the lowest
 > *sampled* point rather than the true minimum, so a wide window missed the
@@ -258,9 +270,44 @@ is outstanding.
 
 ## Phase 6 — Polish + demo prep
 
-- [ ] Visual polish pass on dashboard/globe — the remaining frontend work.
-      Not started. (The maneuver delta-V slider, once listed as outstanding
-      frontend work, is now built: `ManeuverPlanner` in both views.)
+- [x] Visual polish pass on dashboard/globe — driven by measuring the rendered
+      DOM at 1600x861 rather than by eye. Suite 157/157 frontend, lint clean,
+      build green.
+      **The finding that mattered: the maneuver planner was invisible.** The
+      console grid gave the bottom strip an `auto` row, so an AI response of
+      unbounded length took a third of the viewport and squeezed the rails to
+      455px against 1131px of content. The right rail silently hid 676px —
+      the whole ManeuverPlanner and the Selected-object panel — behind an
+      overlay scrollbar nobody sees on a projector. Four changes, each
+      measured: the strip row is capped and the advisor scrolls inside its own
+      box (rails +92px); the risk badge moved into the panel header instead of
+      a centred row of its own; GaugeCard and Countdown gave up their own
+      padding, which was stacking with the GlassPanel body's into ~32px of
+      dead margin per edge (Conjunction risk card 492px -> 362px); and
+      GlassPanel's body became a flex column so it owns the rhythm between
+      stacked children as well as the padding around them. Net: every right
+      rail panel is now reachable on screen, and both sliders are visible
+      without touching anything.
+      **Overflow that remains is now legible, not silent** — `.ui-scroll` in
+      tokens.css gives a scroll region a persistent (non-overlay) scrollbar
+      plus a bottom fade driven by `animation-timeline: scroll()`, which lifts
+      as the region reaches its end. Browsers without scroll-driven animation
+      keep the fade up permanently, which is the safe way to be wrong.
+      **A third colour system, because two were being conflated.** The
+      INJECTED provenance banner was styled with `--risk-watch`, putting a
+      yellow "these objects are synthetic" banner directly above a yellow
+      WATCH threat chip — same hue, two unrelated meanings, 200px apart, in a
+      file whose own header says never to mix the systems. Provenance now has
+      its own violet token and a hatched fill, so the message survives both
+      colour-vision deficiency and a greyscale projector.
+      **Globe:** the HUD moved off the bottom-left corner, which Cesium's
+      required attribution occupies and was overlapping in both views; labels
+      flip to the left of their marker near the right edge (Cesium clips at
+      the canvas boundary rather than reflowing, so names were being sliced
+      mid-word); and a label is hidden outright when its satellite passes
+      behind the limb, instead of being cut in half by the horizon.
+      The flip rule is `lib/labelPlacement.js` with 9 tests, extracted so it
+      is testable without a WebGL context.
 - [x] `docs/validation-notes.md` written — 389 lines covering §1 frame
       transforms, §2 covariance source, §3 the Alfano case, §4 the Envisat
       replay with the published-vs-computed table, §5 the Pc formula

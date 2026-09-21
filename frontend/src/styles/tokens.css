@@ -6,12 +6,15 @@
  * highlight or one red risk dot actually carries meaning. Adding a second
  * decorative accent is what makes a console read as generic.
  *
- * Two colour systems live here and must never be mixed:
+ * Three colour systems live here and must never be mixed:
  *
- *   --accent-*  UI chrome only (active tab, CTA, selection, focus)
- *   --risk-*    semantic conjunction threat only
+ *   --accent-*      UI chrome only (active tab, CTA, selection, focus)
+ *   --risk-*        semantic conjunction threat only
+ *   --provenance-*  where the data came from (synthetic / injected), which is
+ *                   a statement about the input, not about the danger
  *
- * Never style chrome with a risk token, or risk with the accent.
+ * Never style chrome with a risk token, risk with the accent, or provenance
+ * with either. Each hue must have exactly one meaning on screen.
  *
  * Type: sans (Inter) for all labels and prose; mono (JetBrains Mono) ONLY for
  * tabular numeric telemetry — coordinates, altitudes, clocks, NORAD IDs.
@@ -70,6 +73,16 @@
   --risk-unknown: #71717a;
   --risk-unknown-soft: rgba(113, 113, 122, 0.14);
 
+  /* --- Provenance (data origin, not risk) ------------------------------ */
+  /* A third, deliberately separate system. "These objects are synthetic" is
+     not a threat level, and borrowing --risk-watch for it put a yellow
+     provenance banner directly above a yellow WATCH threat chip — same hue,
+     two unrelated meanings, on the same screen. Violet belongs to neither
+     the chrome accent nor the risk scale, so it can only mean one thing. */
+  --provenance: #c4a6ff;
+  --provenance-soft: rgba(196, 166, 255, 0.12);
+  --provenance-border: rgba(196, 166, 255, 0.45);
+
   /* --- Text ------------------------------------------------------------ */
   --text-primary: #f4f4f5;
   --text-secondary: #a1a1aa;
@@ -98,6 +111,9 @@
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
+
+  /* Height of the fade that marks a scroll region as continuing. */
+  --scroll-fade: 28px;
 }
 
 /*
@@ -121,4 +137,57 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
+}
+
+/*
+ * Scrollable region that admits it is scrollable.
+ *
+ * On a projector nobody sees a thin overlay scrollbar, so a rail whose content
+ * runs past the fold just looks like it ends there — which is how the whole
+ * maneuver planner managed to be invisible at 1600x900. Two affordances, both
+ * always-on: a persistent (non-overlay) scrollbar, and a fade at the bottom
+ * edge that only appears while there is more below.
+ *
+ * `animation-timeline: scroll()` drives the fade from scroll position with no
+ * JS and no React state. Browsers without scroll-driven animations keep the
+ * fade permanently visible, which is the safe way to be wrong.
+ */
+.ui-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--scroll-fade)), transparent 100%);
+}
+
+.ui-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.ui-scroll::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.ui-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+@supports (animation-timeline: scroll()) {
+  .ui-scroll {
+    animation: ui-scroll-fade linear;
+    animation-timeline: scroll(self);
+    animation-range: calc(100% - var(--scroll-fade)) 100%;
+  }
+}
+
+/* Lifts the fade as the region reaches its end, so a fully scrolled rail does
+   not keep hinting at content that is not there. */
+@keyframes ui-scroll-fade {
+  to {
+    mask-image: linear-gradient(to bottom, #000 100%, #000 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-scroll { animation: none; }
 }

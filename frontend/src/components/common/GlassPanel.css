@@ -36,9 +36,16 @@
   gap: var(--space-2);
 }
 
+/* Flex column rather than block flow so the body owns the rhythm between
+   stacked children too, not just the padding around them. Without it a panel
+   holding a gauge and a countdown ran the gauge's footnote straight into the
+   countdown's label with no space between them. */
 .glass-panel__body {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
   padding: var(--space-2) var(--space-4) var(--space-4);
   overflow: auto;
 }

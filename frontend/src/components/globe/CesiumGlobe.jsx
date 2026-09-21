@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as Cesium from 'cesium'
 
+import { shouldFlipLabel } from '../../lib/labelPlacement.js'
 import { computeSimTime, DEFAULT_SPEED_MULTIPLIER } from '../../lib/simClock.js'
 import './CesiumGlobe.css'
 
@@ -15,6 +16,17 @@ const LINK_COLORS = {
   watch: '#fbbf24',
   critical: '#f43f5e',
 }
+
+/*
+ * Label placement scratch objects. Module constants because the loop runs at
+ * frame rate: allocating a Cartesian2 per satellite per frame is thousands of
+ * throwaway objects a second for values that never change. The rule itself
+ * lives in lib/labelPlacement.js, where it can be tested without WebGL.
+ */
+const LABEL_OFFSET_RIGHT = new Cesium.Cartesian2(10, 0)
+const LABEL_OFFSET_LEFT = new Cesium.Cartesian2(-10, 0)
+const windowScratch = new Cesium.Cartesian2()
+const occluder = new Cesium.EllipsoidalOccluder(Cesium.Ellipsoid.WGS84)
 
 /**
  * CesiumGlobe — the console's hero view: a freely rotatable Earth with real
@@ -193,6 +205,9 @@ function CesiumGlobe({
         computeSimTime(simBase, performance.now() - startedAtReal, speedRef.current)
       const satellites = propagateRef.current?.(simTime) ?? []
 
+      // Horizon test below is relative to wherever the camera is now.
+      occluder.cameraPosition = viewer.camera.positionWC
+
       for (const sat of satellites) {
         let entity = entitiesRef.current.get(sat.id)
         const position = Cesium.Cartesian3.fromDegrees(
@@ -216,7 +231,7 @@ function CesiumGlobe({
               font: '500 11px Inter, system-ui, sans-serif',
               fillColor: Cesium.Color.fromCssColorString('#a1a1aa'),
               showBackground: false,
-              pixelOffset: new Cesium.Cartesian2(10, 0),
+              pixelOffset: LABEL_OFFSET_RIGHT,
               horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
               verticalOrigin: Cesium.VerticalOrigin.CENTER,
               // Generous ceiling so labels are readable at the default
@@ -233,6 +248,23 @@ function CesiumGlobe({
         }
 
         positions.set(sat.id, position)
+
+        // Labels depth-test against the globe, so a satellite crossing behind
+        // the limb used to have its name sliced down the middle by the
+        // horizon — half a word, which reads as a rendering glitch rather
+        // than as occlusion. Hide the whole label instead.
+        entity.label.show = occluder.isPointVisible(position)
+
+        const window2d = Cesium.SceneTransforms.worldToWindowCoordinates(
+          viewer.scene,
+          position,
+          windowScratch,
+        )
+        const flip = shouldFlipLabel(window2d?.x, viewer.scene.canvas.clientWidth)
+        entity.label.horizontalOrigin = flip
+          ? Cesium.HorizontalOrigin.RIGHT
+          : Cesium.HorizontalOrigin.LEFT
+        entity.label.pixelOffset = flip ? LABEL_OFFSET_LEFT : LABEL_OFFSET_RIGHT
 
         const isSelected = selectedRef.current === sat.id
         entity.point.pixelSize = isSelected ? 11 : 6
