@@ -2,7 +2,7 @@
 
 ## 1. Physics / AI boundary
 
-The system has two strictly separated halves. The **physics pipeline** (Python) is deterministic and independently testable: it ingests TLEs, propagates orbits with SGP4, transforms reference frames, screens for conjunctions, refines time of closest approach, computes collision probability (Pc), and models simplified maneuvers — all with no LLM involvement. The **AI layer** (Claude API) receives only the already-computed, already-validated output of that pipeline as structured JSON, and its sole job is to explain, compare tradeoffs, and recommend in plain language — it never computes, estimates, or alters a physics number. See CLAUDE.md Section 0 for the full statement of this boundary; it is the project's core credibility claim and should not be blurred by any implementation shortcut.
+The system has two strictly separated halves. The **physics pipeline** (Python) is deterministic and independently testable: it ingests TLEs, propagates orbits with SGP4, transforms reference frames, screens for conjunctions, refines time of closest approach, computes collision probability (Pc), and models simplified maneuvers — all with no LLM involvement. The **AI layer** (Google Gemini) receives only the already-computed, already-validated output of that pipeline as structured JSON, and its sole job is to explain, compare tradeoffs, and recommend in plain language — it never computes, estimates, or alters a physics number. See CLAUDE.md Section 0 for the full statement of this boundary; it is the project's core credibility claim and should not be blurred by any implementation shortcut.
 
 ---
 
@@ -52,7 +52,7 @@ maneuver.py (delta-V modeling, pre/post-Pc comparison)
         │    hard-body radius, covariance summary,
         │    maneuver deltas — no raw state vectors)
         ▼
-backend/ai/advisor.py (Claude API — explanation, tradeoffs, recommendation)
+backend/ai/advisor.py (Gemini — explanation, tradeoffs, recommendation)
         │
         ▼
 backend/api/ (FastAPI routes)
@@ -71,7 +71,7 @@ The boundary line above is the single most important line in this diagram — no
 | ---------------------- | ------------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | CelesTrak              | Live TLE data                              | Free, no auth (avoid hammering — fetch once, cache locally)             | — (no key needed)                                                                                |
 | Space-Track.org        | Secondary/full catalog TLE source          | Free, registration required                                             | `SPACETRACK_USERNAME`, `SPACETRACK_PASSWORD`                                                     |
-| Anthropic API (Claude) | AI explanation/recommendation layer        | Paid per-token; est. $5–15 total for this project (see cost discussion) | `ANTHROPIC_API_KEY`                                                                              |
+| Google Gemini (`gemini-2.5-flash`) | AI explanation/recommendation layer | Free tier is sufficient for this project | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) |
 | Cesium Ion             | Terrain/imagery streaming for the 3D globe | Free tier, generous enough for hackathon use                            | `CESIUM_ION_TOKEN` — scoped to `assets:read` (+ `geocode` if used) only, no private/write scopes |
 
 All credentials live in `.env`, which is gitignored; `.env.example` documents required vars with placeholder values only. Never reference a secret directly in frontend source — load Cesium's token the same way as any other env-configured value, not hardcoded in a component.

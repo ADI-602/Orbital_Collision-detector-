@@ -340,6 +340,8 @@ def maneuver_endpoint(req: ManeuverPhysicsRequest) -> Dict[str, Any]:
 def ai_advise_endpoint(req: AIAdvisorRequest) -> AIAdvisorResponse:
     """
     Generate AI decision support analysis for a conjunction event.
-    Automatically degrades to pure-Python rule-based advisor if ANTHROPIC_API_KEY is missing or API fails.
+    Automatically degrades to pure-Python rule-based advisor if GEMINI_API_KEY
+    (or GOOGLE_API_KEY) is missing or the API call fails. This description is
+    served publicly at /docs, so the key name here must match advisor.py.
     """
     return get_ai_advice(req)

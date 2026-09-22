@@ -453,7 +453,9 @@ fetch, but it is redundant per-request work.
 The code calls **Google Gemini** (`gemini-2.5-flash`, `advisor.py:121`) and
 reads `GEMINI_API_KEY` or `GOOGLE_API_KEY` (`advisor.py:108-111`).
 
-The docstring at `main.py:307` still says `ANTHROPIC_API_KEY`; that is stale.
+The docstring that said `ANTHROPIC_API_KEY` was corrected on 2026-09-22; the
+endpoint description served at `/docs` now names `GEMINI_API_KEY`, matching
+`advisor.py`.
 `.env.example` is correct.
 
 ⚠️ **The API server never calls `load_dotenv`.** The only `load_dotenv` in

@@ -187,7 +187,6 @@ def test_maneuver_endpoint():
 def test_ai_advise_endpoint_degrades_gracefully(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     payload = {
         "conjunction": {
             "primary_name": "ENVISAT",

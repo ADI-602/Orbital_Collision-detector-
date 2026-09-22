@@ -46,12 +46,19 @@ than silently presenting rule-based text as if it were live AI output.
    verified against commit `bfe5bd4`. All response examples in it are now
    captured from a live server rather than invented. It is again a usable
    source of truth; re-verify it whenever a route changes.
-2. **AI provider mismatch.** `CLAUDE.md`, `backend/README.md`, and
-   `.env.example` all reference `ANTHROPIC_API_KEY` (Claude), but the actual
-   code in `backend/ai/advisor.py` calls **Google Gemini**
-   (`gemini-2.5-flash`) via `GEMINI_API_KEY`/`GOOGLE_API_KEY`. The frontend
-   should never assume which provider is live — it only needs to trust the
-   response shape (`AIAdvisorResponse`) and the `is_fallback` flag.
+2. **AI provider mismatch — mostly resolved 2026-09-22.** Docs across the repo
+   referenced `ANTHROPIC_API_KEY` (Claude) while `backend/ai/advisor.py` has
+   always called **Google Gemini** (`gemini-2.5-flash`) via
+   `GEMINI_API_KEY`/`GOOGLE_API_KEY`. `backend/README.md`, `backend/ai/`,
+   `backend/api/main.py` (whose docstring is served publicly at `/docs`),
+   `docs/architecture.md`, `docs/api_contract.md` and this file now all say
+   Gemini. Both `.env.example` files were already correct.
+   **`CLAUDE.md` still says Claude API** in sections 0, 2 and 4. It is the
+   project's governing file and asks that conflicts be flagged rather than
+   silently resolved, so it is left for the human to change.
+   Either way the frontend should never assume which provider is live — it
+   only needs to trust the response shape (`AIAdvisorResponse`) and the
+   `is_fallback` flag.
 3. **No live-satellite-position endpoint exists.** There is no
    `/api/satellites/live` and no endpoint that returns a pre-computed replay
    timeline. The frontend must source TLEs from `/api/conjunctions/envisat`

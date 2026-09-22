@@ -44,7 +44,7 @@ python scripts/smoke_test.py
 ## Structure
 
 - `backend/physics/` — deterministic orbital-mechanics pipeline (no LLM calls)
-- `backend/ai/`      — Claude API explanation/recommendation layer
+- `backend/ai/`      — LLM explanation/recommendation layer (Google Gemini)
 - `backend/api/`     — FastAPI routes tying physics + AI together
 
 See `docs/project-doc.md` for the full technical spec and `bob.md` for project

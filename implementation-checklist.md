@@ -88,11 +88,13 @@ How to use this file: check items off as they're genuinely done (validated, not 
       `docs/validation-notes.md` §4.5, suite 63/63.
 - [x] `backend/ai/schema.py` — structured input/output contracts (pydantic models) for the AI layer
 - [x] `backend/ai/prompts.py` — versioned prompt templates (explanation / tradeoff / recommendation)
-- [x] `backend/ai/advisor.py` — Claude API integration with strict numerical integrity enforcement
+- [x] `backend/ai/advisor.py` — Gemini API integration with strict numerical integrity enforcement
 - [x] `backend/api/main.py` — FastAPI routes tying physics + AI together
 - [x] Confirm: physics endpoints work with zero AI/network calls (test by unplugging the Anthropic key temporarily)
 
-🔒 **Gate: AI layer must degrade gracefully (physics dashboard still usable) when the AI call fails or times out, before Phase 5 starts.** ✅ PASSED — 49/49 pytest tests pass. Deterministic rule-based fallback guarantees zero-latency, 100% offline availability for all physics and API endpoints when `ANTHROPIC_API_KEY` is missing or network fails.
+🔒 **Gate: AI layer must degrade gracefully (physics dashboard still usable) when the AI call fails or times out, before Phase 5 starts.** ✅ PASSED — 49/49 pytest tests pass. Deterministic rule-based fallback guarantees zero-latency, 100% offline availability for all physics and API endpoints when `GEMINI_API_KEY` is missing or network fails. (Gate text said
+`ANTHROPIC_API_KEY` until 2026-09-22; the code has always read
+`GEMINI_API_KEY`/`GOOGLE_API_KEY`.)
 
 ---
 

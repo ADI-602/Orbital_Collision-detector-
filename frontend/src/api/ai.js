@@ -7,9 +7,11 @@
  * panel already displays — never as the source of that number.
  *
  * PROVIDER-AGNOSTIC BY DESIGN. The frontend must not name or assume a
- * provider: the backend docstring says ANTHROPIC_API_KEY while
- * backend/ai/advisor.py:108-111 actually reads GEMINI_API_KEY/GOOGLE_API_KEY.
- * We trust only the response shape and the is_fallback flag.
+ * provider. The backend docstrings that disagreed with advisor.py were
+ * corrected on 2026-09-22 (they said ANTHROPIC_API_KEY; the code has always
+ * read GEMINI_API_KEY/GOOGLE_API_KEY), but the rule stands regardless of
+ * which provider is wired up: we trust only the response shape and the
+ * is_fallback flag.
  *
  * THIS ENDPOINT ALWAYS RETURNS 200. Failures degrade to a deterministic
  * rule-based advisor rather than erroring, so HTTP status tells you nothing
