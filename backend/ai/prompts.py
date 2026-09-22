@@ -1,8 +1,13 @@
 """
-prompts.py — Versioned system prompts and user prompt templates for Claude AI Advisor.
+prompts.py — Versioned system prompts and user prompt templates for the AI advisor.
 
 Defines Flight Dynamics Officer (FDO) instructions, numerical integrity rules,
-and JSON schema instructions for Claude API requests.
+and JSON schema instructions for the model request.
+
+The provider is Google Gemini (`gemini-2.5-flash` via `google-genai`) — see
+advisor.py. This docstring previously said "Claude API", which was never true
+of the code; CLAUDE.md still describes the AI layer that way and is the
+remaining place the two disagree.
 """
 
 from .schema import AIAdvisorRequest

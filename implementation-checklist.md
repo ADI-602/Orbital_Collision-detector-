@@ -337,9 +337,32 @@ Worth eyeballing once near TCA during rehearsal.
       frontend uses agrees to within a metre — worth adding as a short
       subsection when convenient, not a correctness gap.)
 - [ ] `demo/recorded_fallback.mp4` recorded (re-record if any pipeline change affects demo numbers)
-- [ ] `demo/demo_checklist.md` written (pre-demo run-through steps)
+- [x] `demo/demo_checklist.md` written — T-1 day / T-30 min / T-5 min phases, a
+      run order with the exact numbers to check each screen against, and a
+      symptom/cause/action table for the failure modes. Every number in it was
+      read back from a running backend or the rendered DOM, not from memory.
+      **Corrected one claim while writing it:** the two-verdict slider demo
+      (-0.5 cm/s "reduces risk" AND "still above threshold") does not work in
+      the INJECTED console case, which starts at Pc 4.66e-5 — already below the
+      1e-4 threshold, so every burn clears both verdicts. It belongs in the
+      Envisat replay planner, which starts at 6.59e-4. The checklist now says
+      so and carries the verified table.
+      **Also fixed a real trap it surfaced:** `.gitignore` ignored
+      `demo/fallback/*.mp4`, but `demo/README.md` and the checklist both put
+      the recording at `demo/recorded_fallback.mp4` — which matched no pattern.
+      Recording to the documented path would have committed a multi-megabyte
+      binary, against CLAUDE.md 1.7. The patterns now cover `demo/` itself.
 - [ ] Full team rehearsal of the live demo + fallback switch
-- [ ] README updated with the physics/AI split stated up front
+- [x] Root `README.md` written — no root README existed at all before this.
+      Leads with the physics/AI split as a table plus the three properties that
+      make the separation checkable rather than merely claimed (no LLM call
+      anywhere under `backend/physics/` — verified by grep; structured-JSON-only
+      input contract; missing data raises rather than defaulting). Then
+      quickstart, what is actually validated and by which test, honest scope
+      including the CW pre-burn-TCA consequence, layout, and the two views.
+      **States the AI provider truthfully as Google Gemini** (`gemini-2.5-flash`
+      via `google-genai`), which is what the code, `backend/requirements.txt`
+      and both `.env.example` files all say.
 
 ---
 

@@ -88,9 +88,16 @@ desktop.ini
 # ------------------------------------------------------------
 # Demo / fallback video (large binary — store externally)
 # ------------------------------------------------------------
-demo/fallback/*.mp4
-demo/fallback/*.mov
-demo/fallback/*.mkv
+# Covers demo/ itself, not just demo/fallback/: demo/README.md and the
+# checklist both put the recording at demo/recorded_fallback.mp4, which the
+# old demo/fallback/ patterns did not match. Recording to the documented
+# path would have committed a multi-megabyte binary.
+demo/**/*.mp4
+demo/**/*.mov
+demo/**/*.mkv
+demo/*.mp4
+demo/*.mov
+demo/*.mkv
 
 # ------------------------------------------------------------
 # Misc
