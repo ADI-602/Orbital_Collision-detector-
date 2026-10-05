@@ -118,7 +118,7 @@ def get_ai_advice(request: AIAdvisorRequest) -> AIAdvisorResponse:
         user_prompt = build_advisor_prompt(request)
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite"),
             contents=user_prompt,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT_V1,

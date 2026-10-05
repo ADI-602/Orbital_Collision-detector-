@@ -15,6 +15,11 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from skyfield.api import load
+from dotenv import load_dotenv
+
+# Secrets live in the repo-root .env (gitignored). Loaded before any module reads
+# the environment; an already-exported variable wins over the file.
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"), override=False)
 
 from backend.ai.advisor import get_ai_advice
 from backend.ai.schema import AIAdvisorRequest, AIAdvisorResponse, ConjunctionContext, ManeuverOption
@@ -382,7 +387,7 @@ def maneuver_endpoint(req: ManeuverPhysicsRequest) -> Dict[str, Any]:
 def ai_advise_endpoint(req: AIAdvisorRequest) -> AIAdvisorResponse:
     """
     Generate AI decision support analysis for a conjunction event.
-    Automatically degrades to pure-Python rule-based advisor if ANTHROPIC_API_KEY is missing or API fails.
+    Automatically degrades to pure-Python rule-based advisor if GEMINI_API_KEY is missing or API fails.
     """
     return get_ai_advice(req)
 
