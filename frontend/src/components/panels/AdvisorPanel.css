@@ -1,0 +1,80 @@
+/*
+ * AdvisorPanel — AI commentary. Chrome colours only: the risk scale is
+ * reserved for threat (tokens.css), and "live vs offline" is system state.
+ */
+
+.advisor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.advisor--empty { gap: var(--space-1); }
+
+.advisor__empty-title {
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.advisor__empty-hint,
+.advisor__note {
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+  margin: 0;
+}
+
+.advisor__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.advisor__ask {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-inner);
+  cursor: pointer;
+}
+
+.advisor__ask:disabled { opacity: 0.5; cursor: default; }
+
+.advisor__chip {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-inner);
+  border: 1px solid currentColor;
+}
+
+.advisor__chip.is-live { color: var(--text-primary); }
+.advisor__chip.is-offline { color: var(--text-secondary); }
+
+.advisor__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.advisor__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.advisor__title { color: var(--text-secondary); }
+
+.advisor__text {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  line-height: 1.55;
+  color: var(--text-primary);
+}
