@@ -1,13 +1,17 @@
 """
-Regenerate the server's committed offline tracked set from CelesTrak.
+Regenerate the server's committed offline tracked set.
 
-Run this from a machine that can reach CelesTrak; the result is a small file of
-real element sets the backend falls back to when the live feed is unavailable
-(`backend/api/tracked_set.py`). It is the difference between a demo that
-survives a blocked IP or venue wifi and one that does not.
+The result is a file of real element sets the backend falls back to when both
+live feeds are unavailable (`backend/api/tracked_set.py`). It is the difference
+between a demo that survives a blocked IP or venue wifi and one that does not.
 
-    python scripts/refresh_tracked_set.py
+    python scripts/refresh_tracked_set.py                       # Space-Track
+    python scripts/refresh_tracked_set.py --provider celestrak  # needs an unblocked IP
     python scripts/refresh_tracked_set.py --groups cosmos-2251-debris --limit 300
+
+Space-Track (the default, since CelesTrak blocks this project's IP) reads
+SPACETRACK_USERNAME / SPACETRACK_PASSWORD from .env and uses one login and one
+query per group. Do not run it in a loop: the account is rate-limited.
 
 WHAT THIS MAY AND MAY NOT DO
 
@@ -41,12 +45,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from dotenv import load_dotenv  # noqa: E402
+
+from backend.api.spacetrack import SpaceTrackClient, SpaceTrackError  # noqa: E402
 from backend.physics.tle_ingest import InvalidTLEError, parse_tle_pair  # noqa: E402
 
 CELESTRAK_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle"
 OUT_PATH = REPO_ROOT / "backend" / "data" / "offline_tracked_set.json"
 
-DEFAULT_GROUPS = ["cosmos-2251-debris", "iridium-33-debris"]
+# Keep in step with TRACKED_GROUPS in backend/api/main.py.
+DEFAULT_GROUPS = ["stations", "cosmos-2251-debris", "iridium-33-debris"]
 DEFAULT_LIMIT = 400
 FETCH_TIMEOUT_S = 30
 
@@ -75,22 +83,43 @@ def main() -> int:
         help="max objects to keep PER GROUP (0 = keep all)",
     )
     ap.add_argument("--out", type=Path, default=OUT_PATH)
+    ap.add_argument(
+        "--provider", choices=["space-track", "celestrak"], default="space-track",
+    )
     args = ap.parse_args()
 
     kept, seen, rejected = [], set(), []
 
-    for group in args.groups:
-        print(f"fetching {group} ...", flush=True)
+    if args.provider == "space-track":
+        load_dotenv(REPO_ROOT / ".env")
+        print(f"fetching {', '.join(args.groups)} from Space-Track (one session) ...", flush=True)
         try:
-            text = fetch(group)
-        except Exception as exc:
+            texts = SpaceTrackClient().fetch_groups(args.groups)
+        except SpaceTrackError as exc:
             print(f"  FAILED: {exc}", file=sys.stderr)
-            print(
-                "  (if this times out with no HTTP status, the IP is likely "
-                "blocked rather than rate-limited — try another network)",
-                file=sys.stderr,
-            )
             return 1
+        missing = [g for g in args.groups if g not in texts]
+        if missing:
+            print(f"  no data for: {', '.join(missing)}", file=sys.stderr)
+            return 1
+    else:
+        texts = {}
+
+    for group in args.groups:
+        if args.provider == "space-track":
+            text = texts[group]
+        else:
+            print(f"fetching {group} ...", flush=True)
+            try:
+                text = fetch(group)
+            except Exception as exc:
+                print(f"  FAILED: {exc}", file=sys.stderr)
+                print(
+                    "  (if this times out with no HTTP status, the IP is likely "
+                    "blocked rather than rate-limited — try another network)",
+                    file=sys.stderr,
+                )
+                return 1
 
         group_kept = 0
         for name, line1, line2 in blocks(text):
@@ -111,7 +140,7 @@ def main() -> int:
             kept.append((name, line1, line2))
             group_kept += 1
 
-        print(f"  kept {group_kept} object(s)")
+        print(f"  {group}: kept {group_kept} object(s)")
 
     if not kept:
         print("nothing usable fetched; refusing to write", file=sys.stderr)
@@ -120,7 +149,7 @@ def main() -> int:
     payload = {
         "_comment": [
             "Offline fallback for the server's tracked set. REAL, UNMODIFIED TLEs",
-            "as served by CelesTrak at the capture time below.",
+            f"as served by {args.provider} at the capture time below.",
             "Regenerate with: python scripts/refresh_tracked_set.py",
             "Objects are the first N of each group -- an arbitrary subset, NOT",
             "chosen for producing conjunctions. Screening on this data is free",
@@ -128,6 +157,7 @@ def main() -> int:
         ],
         "captured_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "captured_at_unix": time.time(),
+        "provider": args.provider,
         "groups": list(args.groups),
         "object_count": len(kept),
         "rejected": rejected,

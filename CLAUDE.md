@@ -97,6 +97,18 @@ primary; Space-Track.org secondary; committed offline set as the floor
 > `scripts/refresh_tracked_set.py` from any working network. **The demo no
 > longer depends on a third party being reachable.** The offline set seeds
 > INPUTS only; it is never selected for producing conjunctions (§5.2).
+>
+> **Space-Track is now the live source (2026-10-05).** CelesTrak was still
+> blocked, so `backend/api/spacetrack.py` maps each tracked group to a
+> Space-Track `gp` query (by international designator) and `tracked_set.py`
+> uses it for any group CelesTrak cannot serve. Account-scoped, not IP-scoped,
+> so it works from here. Measured: 700 live objects (stations + Cosmos 2251 +
+> Iridium 33 debris), 41 real conjunctions on the first pass (1 YELLOW).
+> **Rate limits are hard**: one login + one query per group per refresh, 6 h
+> cache, 30 min backoff after a failure, no retry at all after a rejected
+> login. Never poll it from a loop or a request thread. Tests must never reach
+> it — `tests/conftest.py` blocks it suite-wide. The offline set is now
+> regenerated from Space-Track by default (513 objects, capped per group).
 **AI layer:** Google Gemini (`gemini-2.5-flash`), structured JSON in/out — see the provider note below
 **Frontend:** React + Vite, CesiumJS (3D globe), plain per-component CSS, vitest
 **Testing:** `pytest` (backend), `vitest` (frontend), with the Alfano case as a hardcoded regression test

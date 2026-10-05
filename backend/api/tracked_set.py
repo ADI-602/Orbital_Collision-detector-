@@ -37,6 +37,7 @@ from typing import Dict, List, Optional, Tuple
 
 from skyfield.api import EarthSatellite
 
+from backend.api.spacetrack import SpaceTrackClient, SpaceTrackError
 from backend.physics.tle_ingest import InvalidTLEError, parse_tle_pair
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,10 @@ class TrackedSetSnapshot:
     fetched_at: float
     rejected: List[Dict[str, str]]
     error: Optional[str] = None
+    # Who actually served the element sets: "celestrak", "space-track", or for
+    # a bundled snapshot whoever the offline file was captured from. Reported
+    # alongside `source` so "live" never hides WHICH live feed it was.
+    providers: Tuple[str, ...] = ()
 
     @property
     def count(self) -> int:
@@ -184,14 +189,18 @@ class TrackedSet:
     snapshot reference and never see a half-updated set.
     """
 
-    def __init__(self, groups: List[str]):
+    def __init__(self, groups: List[str], spacetrack: Optional[SpaceTrackClient] = None):
         self._groups = list(groups)
+        # Second live source, used for any group CelesTrak cannot serve.
+        self._spacetrack = spacetrack if spacetrack is not None else SpaceTrackClient()
         self._lock = threading.Lock()
         self._raw_by_group: Dict[str, str] = {}
+        self._provider_by_group: Dict[str, str] = {}
         self._failed_at: Optional[float] = None
         self._bundled_cache: Optional[
             Tuple[List[TrackedObject], List[Dict[str, str]], float, List[str]]
         ] = None
+        self._bundled_providers: Tuple[str, ...] = ()
 
         # Put the floor in place BEFORE the first request, not after the first
         # failure. A cold start with the live feed blocked otherwise leaves a
@@ -209,6 +218,7 @@ class TrackedSet:
                 fetched_at=captured_at,
                 rejected=bundled_rejected,
                 error="offline set; live feed not yet fetched",
+                providers=self._bundled_providers,
             )
         else:
             self._snapshot = TrackedSetSnapshot(
@@ -278,6 +288,8 @@ class TrackedSet:
             text = raw.get("tle_text") or ""
             captured = raw.get("captured_utc")
             groups = list(raw.get("groups") or [])
+            provider = raw.get("provider")
+            self._bundled_providers = (f"offline:{provider}",) if provider else ("offline",)
         except (OSError, ValueError) as exc:
             logger.warning("tracked_set: offline fallback unavailable: %s", exc)
             self._bundled_cache = empty
@@ -306,7 +318,8 @@ class TrackedSet:
 
     def load(self, force_refresh: bool = False) -> TrackedSetSnapshot:
         """
-        Populate the set from CelesTrak, or replay the last successful fetch.
+        Populate the set from CelesTrak, then Space-Track for any group
+        CelesTrak cannot serve, then replay the last successful fetch.
 
         A failed fetch NEVER empties an existing set. An empty globe is
         indistinguishable from "nothing is up there", so the previous snapshot
@@ -339,6 +352,14 @@ class TrackedSet:
             deadline = time.time() + _TOTAL_FETCH_BUDGET_S
             replayed_from_cache = False
 
+            texts: Dict[str, str] = {}
+            providers: Dict[str, str] = {}
+            missing: List[str] = []
+            # A CelesTrak failure is only worth reporting if no other source
+            # covered that group; otherwise a healthy live set reads as broken.
+            celestrak_errors: Dict[str, str] = {}
+
+            # 1. CelesTrak, per group, within the wall-clock budget.
             for group in self._groups:
                 remaining = deadline - time.time()
                 try:
@@ -346,28 +367,52 @@ class TrackedSet:
                         raise TimeoutError(
                             f"fetch budget of {_TOTAL_FETCH_BUDGET_S}s exhausted"
                         )
-                    text = self._fetch_group(group, min(_FETCH_TIMEOUT_S, remaining))
-                    self._raw_by_group[group] = text
+                    texts[group] = self._fetch_group(group, min(_FETCH_TIMEOUT_S, remaining))
+                    providers[group] = "celestrak"
                 except (urllib.error.URLError, TimeoutError, OSError) as exc:
-                    # Fall back to this group's last good text if we have it.
-                    if group in self._raw_by_group:
-                        logger.warning(
-                            "tracked_set: %s fetch failed (%s), replaying cached text",
-                            group, exc,
-                        )
-                        text = self._raw_by_group[group]
-                        # Replayed bytes are not a live fetch, and the snapshot
-                        # must not claim they are. Record WHY it is stale too —
-                        # "cached" without a reason leaves the UI unable to say
-                        # what went wrong.
-                        replayed_from_cache = True
-                        errors.append(f"{group}: {exc} (replayed cached text)")
-                    else:
-                        logger.error("tracked_set: %s unavailable: %s", group, exc)
-                        errors.append(f"{group}: {exc}")
-                        continue
+                    logger.warning("tracked_set: %s via CelesTrak failed: %s", group, exc)
+                    celestrak_errors[group] = f"{group}: CelesTrak: {exc}"
+                    missing.append(group)
 
-                group_objects, group_rejected = _parse_tle_text(text, group)
+            # 2. Space-Track for whatever CelesTrak could not serve, in ONE
+            #    authenticated session (rate limits — see spacetrack.py).
+            if missing:
+                try:
+                    fetched = self._spacetrack.fetch_groups(missing)
+                except SpaceTrackError as exc:
+                    logger.warning("tracked_set: Space-Track unavailable: %s", exc)
+                    errors.append(f"Space-Track: {exc}")
+                else:
+                    for group, text in fetched.items():
+                        texts[group] = text
+                        providers[group] = "space-track"
+                    missing = [g for g in missing if g not in fetched]
+            errors.extend(celestrak_errors[g] for g in missing)
+
+            # Only freshly fetched text becomes the new "last good" copy.
+            for group, text in texts.items():
+                self._raw_by_group[group] = text
+                self._provider_by_group[group] = providers[group]
+
+            # 3. The last good text for any group still missing.
+            for group in missing:
+                if group in self._raw_by_group:
+                    logger.warning("tracked_set: %s replaying cached text", group)
+                    texts[group] = self._raw_by_group[group]
+                    providers[group] = self._provider_by_group.get(group, "unknown")
+                    # Replayed bytes are not a live fetch, and the snapshot
+                    # must not claim they are. Record WHY it is stale too —
+                    # "cached" without a reason leaves the UI unable to say
+                    # what went wrong.
+                    replayed_from_cache = True
+                    errors.append(f"{group}: replayed cached text")
+                else:
+                    logger.error("tracked_set: %s unavailable from every source", group)
+
+            for group in self._groups:
+                if group not in texts:
+                    continue
+                group_objects, group_rejected = _parse_tle_text(texts[group], group)
                 rejected.extend(group_rejected)
                 for obj in group_objects:
                     # The same object can appear in more than one group.
@@ -396,6 +441,7 @@ class TrackedSet:
                         fetched_at=stale.fetched_at,
                         rejected=stale.rejected,
                         error=reason,
+                        providers=stale.providers,
                     )
                     return self._snapshot
 
@@ -413,6 +459,7 @@ class TrackedSet:
                         fetched_at=captured_at,
                         rejected=bundled_rejected,
                         error=reason,
+                        providers=self._bundled_providers,
                     )
                     return self._snapshot
 
@@ -434,9 +481,11 @@ class TrackedSet:
                 fetched_at=time.time(),
                 rejected=rejected,
                 error="; ".join(errors) or None,
+                providers=tuple(sorted(set(providers.values()))),
             )
             logger.info(
-                "tracked_set: %d objects from %s (%d rejected)",
-                len(objects), ", ".join(self._groups), len(rejected),
+                "tracked_set: %d objects from %s via %s (%d rejected)",
+                len(objects), ", ".join(self._groups),
+                ", ".join(sorted(set(providers.values()))), len(rejected),
             )
             return self._snapshot

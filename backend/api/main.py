@@ -52,7 +52,9 @@ logger = logging.getLogger("orbital_risk_api")
 TRACKED_GROUPS = [
     g.strip()
     for g in os.environ.get(
-        "TRACKED_GROUPS", "cosmos-2251-debris,iridium-33-debris",
+        # `stations` adds the crewed stations people expect to see; the debris
+        # groups are what produce real conjunctions.
+        "TRACKED_GROUPS", "stations,cosmos-2251-debris,iridium-33-debris",
     ).split(",")
     if g.strip()
 ]
@@ -428,6 +430,8 @@ def tracking_objects() -> Dict[str, Any]:
         "count": snap.count,
         "groups": snap.groups,
         "source": snap.source,
+        # Which feed served it: celestrak, space-track, or offline:<provider>.
+        "providers": list(snap.providers),
         "fetched_at_unix": snap.fetched_at,
         # Element sets that would not parse never reached the pipeline, so they
         # cannot show up as "no conjunction found". They are named instead.
