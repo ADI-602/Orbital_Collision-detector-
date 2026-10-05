@@ -126,7 +126,14 @@ How to use this file: check items off as they're genuinely done (validated, not 
       freezes with the globe on pause, and returns to the window start on
       restart.
 - [ ] Envisat replay wired end-to-end (globe + countdown + Pc trend + AI recommendation, all live from real pipeline output)
-      — **3 of 4 parts done.** The `Envisat replay` tab is a live view
+      — **AI step wired (2026-10-05), pending a visual check.** `AdvisorPanel` on the
+      replay and the live console, via `useAiAdvice`, asked on demand with the
+      simulated burn attached. Verified: `/api/ai/advise` returns a live
+      Gemini answer (`is_fallback: false`) with the key supplied only by `.env`;
+      130+ unit tests, build and lint green; backend 112/112. NOT yet verified:
+      the panel rendered in a browser. Model default is now `gemini-3.1-flash-lite`
+      (`gemini-2.5-flash` is closed to new keys). Earlier status follows —
+      **3 of 4 parts done.** The `Envisat replay` tab is a live view
       (`frontend/src/pages/Replay.jsx`): both objects propagated onto their own
       globe on a looping clock around the real TCA, the countdown above, and
       all four archived prediction days re-run through

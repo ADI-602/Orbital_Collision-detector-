@@ -3,20 +3,22 @@ import { useCallback, useMemo, useState } from 'react'
 import { API_BASE_URL } from '../api/client.js'
 import ErrorState from '../components/common/ErrorState.jsx'
 import GaugeCard from '../components/common/GaugeCard.jsx'
-import GlassPanel from '../components/common/GlassPanel.jsx'
-import PillStat from '../components/common/PillStat.jsx'
+import FloatingPanel from '../components/common/FloatingPanel.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AssetStrip from '../components/panels/AssetStrip.jsx'
+import AdvisorPanel from '../components/panels/AdvisorPanel.jsx'
 import EventDetail from '../components/panels/EventDetail.jsx'
 import ManeuverPanel from '../components/panels/ManeuverPanel.jsx'
 import SelectedObjectPanel from '../components/panels/SelectedObjectPanel.jsx'
 import StatusHeader from '../components/panels/StatusHeader.jsx'
 import { useHealth } from '../hooks/useHealth.js'
 import { useLiveSatellites } from '../hooks/useLiveSatellites.js'
+import { useAiAdvice } from '../hooks/useAiAdvice.js'
 import { useManeuver } from '../hooks/useManeuver.js'
 import { useScreening } from '../hooks/useScreening.js'
 import { eventKey, hasGlobePresence, riskColorHex } from '../lib/conjunctions.js'
 import { DEFAULT_SPEED_MULTIPLIER, formatSimClock } from '../lib/simClock.js'
+import '../styles/globePage.css'
 import './Console.css'
 
 const UVICORN_COMMAND = 'backend\\.venv\\Scripts\\uvicorn backend.api.main:app --reload --port 8000'
@@ -85,32 +87,6 @@ function sourceFootnote({ loading, source, snapshotEpoch, cachedAt }) {
   return 'No tracking data'
 }
 
-function SignalIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M2 11.5h2.5v3H2zM6.5 7.5H9v7H6.5zM11 3.5h2.5v11H11z" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function OrbitIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="8" cy="8" r="3.2" />
-      <ellipse cx="8" cy="8" rx="6.6" ry="3" transform="rotate(-28 8 8)" />
-    </svg>
-  )
-}
-
-function ClockIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="8" cy="8" r="6" />
-      <path d="M8 4.6V8l2.3 1.6" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 /**
  * The main console screen.
  *
@@ -168,6 +144,7 @@ function Console({ view, onChangeView }) {
   // The avoidance burn for whatever is selected. Runs only when asked; see
   // useManeuver for why a console must not quietly plan one per click.
   const maneuver = useManeuver(selectedEvent, tleFor)
+  const ai = useAiAdvice(selectedEvent, selectedEvent?.primary_name ?? 'Primary', maneuver.result)
 
   // Only a live event has two real markers on this globe to connect — the
   // injected 2004 Envisat replay does not (see hasGlobePresence()).
@@ -195,172 +172,193 @@ function Console({ view, onChangeView }) {
     return tracks ? { tracks, colorHex: riskColorHex(selectedEvent) } : null
   }, [selectedEvent, maneuver.result])
 
-  const tracked = telemetry.satellites.length
-
   return (
-    <div className="console">
-      <div className="console__header">
-        <StatusHeader health={health} view={view} onChangeView={onChangeView} />
+    <div className="globe-page console">
+      {/* The globe is the page. Everything else floats over it. */}
+      <div className="globe-page__globe">
+        <CesiumGlobe
+          propagateAll={propagateAll}
+          satelliteCount={count}
+          onTelemetry={handleTelemetry}
+          onSelect={handleSelect}
+          selectedId={selectedId}
+          highlightPair={highlightPair}
+          orbitTrackFor={orbitTrackFor}
+          maneuverOverlay={maneuverOverlay}
+        />
       </div>
 
-      {health.status === 'offline' && (
-        <div className="console__banner">
-          <ErrorState
-            title="Backend unreachable"
-            detail={health.error?.detail ?? health.error?.message ?? 'unknown error'}
-            hint={
-              <>
-                Physics endpoints are unavailable until the API responds at{' '}
-                <code>{API_BASE_URL}</code>. Start it from the repo root:{' '}
-                <code>{UVICORN_COMMAND}</code>
-                {' '}— the globe below is independent and keeps running.
-              </>
-            }
-            onRetry={health.refresh}
-          />
+      <div className="globe-page__overlay">
+        <div className="globe-page__header">
+          <StatusHeader health={health} view={view} onChangeView={onChangeView} />
         </div>
-      )}
 
-      {/* --- Left rail ---------------------------------------------------- */}
-      <div className="console__rail-left">
-        <GlassPanel className="console__card">
-          <GaugeCard
-            label="Tracking status"
-            value={count}
-            max={count + rejected.length}
-            display={String(count)}
-            unit={rejected.length ? `of ${count + rejected.length} objects` : 'objects'}
-            tone={source === 'snapshot' || source === 'replay' ? 'watch' : 'accent'}
-            footnote={sourceFootnote({ loading, source, snapshotEpoch, cachedAt })}
-          />
-        </GlassPanel>
-
-        <GlassPanel title="Feed" className="console__card">
-          <div className="console__feed">
-            <div className="console__feed-row">
-              <span className="console__feed-key">Source</span>
-              <span className="console__feed-val ui-readout">{SOURCE_LABEL[source] ?? '—'}</span>
-            </div>
-            <div className="console__feed-row">
-              <span className="console__feed-key">Groups</span>
-              <span className="console__feed-val ui-readout" title={serverGroups.join(', ')}>
-                {serverGroups.length ? serverGroups.join(', ') : '—'}
-              </span>
-            </div>
-            <div className="console__feed-row">
-              <span className="console__feed-key">Propagator</span>
-              <span className="console__feed-val ui-readout">SGP4</span>
-            </div>
-          </div>
-
-          {/* The live feed being down is a normal, survivable state — but it
-              must be stated, never hidden behind still-moving satellites. */}
-          {(source === 'snapshot' || source === 'replay') && (
-            <div className="console__feed-degraded">
-              <ErrorState
-                title="Backend tracked set unavailable"
-                detail={tleError?.message ?? 'the server did not answer'}
-                hint={
-                  source === 'replay'
-                    ? 'Replaying the last set this browser received from the server. The objects are the ones the server was screening, but positions drift as the element sets age.'
-                    : `Showing a bundled snapshot of real TLEs captured ${snapshotEpoch}. This is NOT the set the server screens — conjunction events will refer to objects that are not on this globe.`
-                }
-                onRetry={refreshTle}
-              />
-            </div>
-          )}
-
-          {/* Element sets that would not parse never reached the pipeline, so
-              they cannot appear as "no conjunction found". Name them. */}
-          {rejected.length > 0 && (
-            <div className="console__feed-degraded">
-              <ErrorState
-                title={`${rejected.length} element set${rejected.length === 1 ? '' : 's'} rejected`}
-                detail={rejected
-                  .slice(0, 3)
-                  .map((r) => `${r.name}: ${r.reason}`)
-                  .join('\n')}
-                hint="These objects are not tracked and are not screened. They are listed here rather than silently dropped, so the object count is not mistaken for full coverage."
-              />
-            </div>
-          )}
-        </GlassPanel>
-      </div>
-
-      {/* --- Centre: the globe -------------------------------------------- */}
-      <div className="console__stage">
-        <GlassPanel className="console__card console__card--stage glass-panel--bleed">
-          <CesiumGlobe
-            propagateAll={propagateAll}
-            satelliteCount={count}
-            onTelemetry={handleTelemetry}
-            onSelect={handleSelect}
-            selectedId={selectedId}
-            highlightPair={highlightPair}
-            orbitTrackFor={orbitTrackFor}
-            maneuverOverlay={maneuverOverlay}
-          />
-          <div className="console__stage-hud">
-            <span className="console__hud-label ui-label">Sim time</span>
-            <span className="console__hud-clock ui-readout">
-              {telemetry.simTime ? formatSimClock(telemetry.simTime) : '—'}
-            </span>
-            {/* The multiplier is always on screen: motion is sped up, and the
-                view must never be mistaken for literal real-time. */}
-            <span className="console__hud-speed">×{DEFAULT_SPEED_MULTIPLIER}</span>
-          </div>
-        </GlassPanel>
-      </div>
-
-      {/* --- Right rail ---------------------------------------------------- */}
-      <div className="console__rail-right">
-        <GlassPanel title="Selected object" className="console__card">
-          <SelectedObjectPanel satellite={selected} />
-        </GlassPanel>
-
-        <GlassPanel title="Conjunction risk" className="console__card">
-          <EventDetail
-            event={selectedEvent}
-            onOpenReplay={onChangeView ? () => onChangeView('replay') : undefined}
-          />
-        </GlassPanel>
-      </div>
-
-      {/* --- Bottom strip --------------------------------------------------- */}
-      <div className="console__strip">
-        <GlassPanel className="console__card">
-          <div className="console__strip-inner">
-            <AssetStrip
-              satellites={telemetry.satellites}
-              selectedId={selectedId}
-              onSelect={handleSelect}
-              screening={screening}
-              selectedEventKey={selectedEventKey}
-              onSelectEvent={handleSelectEvent}
+        {health.status === 'offline' && (
+          <div className="globe-page__banner">
+            <ErrorState
+              title="Backend unreachable"
+              detail={health.error?.detail ?? health.error?.message ?? 'unknown error'}
+              hint={
+                <>
+                  Physics endpoints are unavailable until the API responds at{' '}
+                  <code>{API_BASE_URL}</code>. Start it from the repo root:{' '}
+                  <code>{UVICORN_COMMAND}</code>
+                  {' '}— the globe below is independent and keeps running.
+                </>
+              }
+              onRetry={health.refresh}
             />
+          </div>
+        )}
 
-            <div className="console__pills">
-              <PillStat
-                icon={<SignalIcon />}
-                label="Backend"
-                value={health.status === 'online' ? 'Online' : health.status === 'offline' ? 'Offline' : 'Connecting'}
-                tone={health.status === 'online' ? 'nominal' : health.status === 'offline' ? 'critical' : 'dim'}
-              />
-              <PillStat icon={<OrbitIcon />} label="Objects tracked" value={String(tracked)} />
-              <PillStat
-                icon={<ClockIcon />}
-                label="Sim speed"
-                value={`×${DEFAULT_SPEED_MULTIPLIER}`}
-                title="Simulated clock rate relative to real time"
-              />
-            </div>
-
-            <div className="console__strip-maneuver">
-              <span className="ui-label console__strip-title">Maneuver planning</span>
-              <ManeuverPanel event={selectedEvent} maneuver={maneuver} />
+        <div className="globe-page__field">
+          {/* --- Centre: simulated clock over the globe ----------------- */}
+          <div className="globe-page__center">
+            <div className="globe-page__hud console__hud">
+              <span className="console__hud-label ui-label">Sim time</span>
+              <span className="console__hud-clock ui-readout">
+                {telemetry.simTime ? formatSimClock(telemetry.simTime) : '—'}
+              </span>
+              {/* The multiplier is always on screen: motion is sped up, and the
+                  view must never be mistaken for literal real-time. */}
+              <span className="console__hud-speed">×{DEFAULT_SPEED_MULTIPLIER}</span>
             </div>
           </div>
-        </GlassPanel>
+
+          {/* --- Left rail: what is tracked, and the burn planner -------- */}
+          <div className="globe-page__rail globe-page__rail--left">
+            <FloatingPanel
+              id="console.tracking"
+              title="Tracked set"
+              resize={['e', 's']}
+              className="globe-page__float"
+            >
+              <GaugeCard
+                label="Tracking status"
+                value={count}
+                max={count + rejected.length}
+                display={String(count)}
+                unit={rejected.length ? `of ${count + rejected.length} objects` : 'objects'}
+                tone={source === 'snapshot' || source === 'replay' ? 'watch' : 'accent'}
+                footnote={sourceFootnote({ loading, source, snapshotEpoch, cachedAt })}
+              />
+            </FloatingPanel>
+
+            <FloatingPanel id="console.feed" title="Feed" resize={['e', 's']} className="globe-page__float">
+              <div className="console__feed">
+                <div className="console__feed-row">
+                  <span className="console__feed-key">Source</span>
+                  <span className="console__feed-val ui-readout">{SOURCE_LABEL[source] ?? '—'}</span>
+                </div>
+                <div className="console__feed-row">
+                  <span className="console__feed-key">Groups</span>
+                  <span className="console__feed-val ui-readout" title={serverGroups.join(', ')}>
+                    {serverGroups.length ? serverGroups.join(', ') : '—'}
+                  </span>
+                </div>
+                <div className="console__feed-row">
+                  <span className="console__feed-key">Propagator</span>
+                  <span className="console__feed-val ui-readout">SGP4</span>
+                </div>
+              </div>
+
+              {/* The live feed being down is a normal, survivable state — but it
+                  must be stated, never hidden behind still-moving satellites. */}
+              {(source === 'snapshot' || source === 'replay') && (
+                <div className="console__feed-degraded">
+                  <ErrorState
+                    title="Backend tracked set unavailable"
+                    detail={tleError?.message ?? 'the server did not answer'}
+                    hint={
+                      source === 'replay'
+                        ? 'Replaying the last set this browser received from the server. The objects are the ones the server was screening, but positions drift as the element sets age.'
+                        : `Showing a bundled snapshot of real TLEs captured ${snapshotEpoch}. This is NOT the set the server screens — conjunction events will refer to objects that are not on this globe.`
+                    }
+                    onRetry={refreshTle}
+                  />
+                </div>
+              )}
+
+              {/* Element sets that would not parse never reached the pipeline, so
+                  they cannot appear as "no conjunction found". Name them. */}
+              {rejected.length > 0 && (
+                <div className="console__feed-degraded">
+                  <ErrorState
+                    title={`${rejected.length} element set${rejected.length === 1 ? '' : 's'} rejected`}
+                    detail={rejected
+                      .slice(0, 3)
+                      .map((r) => `${r.name}: ${r.reason}`)
+                      .join('\n')}
+                    hint="These objects are not tracked and are not screened. They are listed here rather than silently dropped, so the object count is not mistaken for full coverage."
+                  />
+                </div>
+              )}
+            </FloatingPanel>
+
+            <FloatingPanel
+              id="console.maneuver"
+              title="Maneuver planning"
+              resize={['e', 's']}
+              className="globe-page__float"
+            >
+              <ManeuverPanel event={selectedEvent} maneuver={maneuver} />
+            </FloatingPanel>
+          </div>
+
+          {/* --- Right rail: the selection, its risk, and the advisor ---- */}
+          <div className="globe-page__rail globe-page__rail--right">
+            <FloatingPanel
+              id="console.object"
+              title="Selected object"
+              resize={['w', 's']}
+              className="globe-page__float"
+            >
+              <SelectedObjectPanel satellite={selected} />
+            </FloatingPanel>
+
+            <FloatingPanel
+              id="console.risk"
+              title="Conjunction risk"
+              resize={['w', 's']}
+              className="globe-page__float"
+            >
+              <EventDetail
+                event={selectedEvent}
+                onOpenReplay={onChangeView ? () => onChangeView('replay') : undefined}
+              />
+            </FloatingPanel>
+
+            <FloatingPanel
+              id="console.ai"
+              title="AI advisor"
+              resize={['w', 's']}
+              className="globe-page__float"
+            >
+              <AdvisorPanel event={selectedEvent} ai={ai} />
+            </FloatingPanel>
+          </div>
+
+          {/* --- Bottom: tracked objects and conjunction events ---------- */}
+          <div className="globe-page__strip">
+            <FloatingPanel
+              id="console.events"
+              title="Objects and conjunction events"
+              resize={['n']}
+              minHeight={90}
+              className="globe-page__float globe-page__float--strip"
+            >
+              <AssetStrip
+                satellites={telemetry.satellites}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+                screening={screening}
+                selectedEventKey={selectedEventKey}
+                onSelectEvent={handleSelectEvent}
+              />
+
+            </FloatingPanel>
+          </div>
+        </div>
       </div>
     </div>
   )
