@@ -42,7 +42,7 @@ import { SNAPSHOT_CAPTURED_UTC, TLE_SNAPSHOT_TEXT } from '../lib/tleSnapshot.js'
  * show which — rendering stale data as live is the same class of dishonesty as
  * fabricating a number:
  *
- *   'live'     the server fetched it from CelesTrak just now
+ *   'live'     the server fetched it just now (CelesTrak or Space-Track)
  *   'cached'   the server replayed its own earlier fetch
  *   'bundled'  the server fell back to its COMMITTED offline set. Still the
  *              set it screens, so events match the globe — it is simply old,
@@ -132,6 +132,7 @@ function recordsFromText(text) {
  *   error: Error | null,
  *   source: 'live' | 'cached' | 'bundled' | 'replay' | 'snapshot' | null,
  *   serverGroups: string[],
+ *   providers: string[],
  *   rejected: Array<{name: string, reason: string}>,
  *   snapshotEpoch: string,
  *   cachedAt: number | null,
@@ -147,6 +148,8 @@ export function useLiveSatellites() {
   const [error, setError] = useState(null)
   const [source, setSource] = useState(null)
   const [serverGroups, setServerGroups] = useState([])
+  // Which feed the server used: celestrak, space-track, offline:<provider>.
+  const [providers, setProviders] = useState([])
   const [rejected, setRejected] = useState([])
   const [cachedAt, setCachedAt] = useState(null)
   const [nonce, setNonce] = useState(0)
@@ -192,7 +195,7 @@ export function useLiveSatellites() {
 
         setRecords(built)
         // The server's own provenance passes straight through: 'live' means it
-        // fetched from CelesTrak just now, 'cached' means it replayed its own
+        // fetched from CelesTrak or Space-Track just now, 'cached' means it replayed its own
         // earlier fetch, 'bundled' means it fell back to its committed offline
         // set. All three are the set the server SCREENS, so events and globe
         // markers still correspond — that is what separates them from the
@@ -203,6 +206,7 @@ export function useLiveSatellites() {
             : 'cached',
         )
         setServerGroups(payload.groups ?? [])
+        setProviders(payload.providers ?? [])
         setRejected(payload.rejected ?? [])
         setCachedAt(payload.fetched_at_unix ? payload.fetched_at_unix * 1000 : null)
         setError(payload.error ? new Error(payload.error) : null)
@@ -315,6 +319,7 @@ export function useLiveSatellites() {
     error,
     source,
     serverGroups,
+    providers,
     rejected,
     snapshotEpoch: SNAPSHOT_CAPTURED_UTC,
     cachedAt,

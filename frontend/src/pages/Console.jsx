@@ -47,6 +47,26 @@ const SOURCE_LABEL = {
   snapshot: 'Bundled snapshot',
 }
 
+/** Which feed the server's element sets came from (backend tracked_set.py). */
+const PROVIDER_LABEL = {
+  celestrak: 'CelesTrak',
+  'space-track': 'Space-Track',
+}
+
+/** "Space-Track", "offline (Space-Track)", "CelesTrak + Space-Track", or "—". */
+function describeProviders(providers) {
+  if (!providers?.length) return '—'
+  return providers
+    .map((p) => {
+      if (p.startsWith('offline')) {
+        const from = p.split(':')[1]
+        return from ? `offline (${PROVIDER_LABEL[from] ?? from})` : 'offline'
+      }
+      return PROVIDER_LABEL[p] ?? p
+    })
+    .join(' + ')
+}
+
 /** Relative age of a cached fetch, e.g. "cached 12 min ago". */
 function describeAge(ms) {
   const minutes = Math.max(0, Math.round((Date.now() - ms) / 60000))
@@ -109,6 +129,7 @@ function Console({ view, onChangeView }) {
     error: tleError,
     source,
     serverGroups,
+    providers,
     rejected,
     snapshotEpoch,
     cachedAt,
@@ -119,6 +140,12 @@ function Console({ view, onChangeView }) {
   } = useLiveSatellites()
 
   const [telemetry, setTelemetry] = useState({ simTime: null, satellites: [] })
+
+  // Real time by default: every marker sits where SGP4 puts it at this actual
+  // second. ×120 is offered for visible motion and is always labelled as such.
+  // Switching restarts the clock from now (clockKey), so time never jumps.
+  const [realTime, setRealTime] = useState(true)
+  const wallClock = useCallback(() => new Date(), [])
   const [selectedId, setSelectedId] = useState(null)
   const [selectedEventKey, setSelectedEventKey] = useState(null)
 
@@ -185,6 +212,8 @@ function Console({ view, onChangeView }) {
           highlightPair={highlightPair}
           orbitTrackFor={orbitTrackFor}
           maneuverOverlay={maneuverOverlay}
+          simTimeFor={realTime ? wallClock : null}
+          clockKey={realTime ? 'realtime' : 'fast'}
         />
       </div>
 
@@ -215,13 +244,29 @@ function Console({ view, onChangeView }) {
           {/* --- Centre: simulated clock over the globe ----------------- */}
           <div className="globe-page__center">
             <div className="globe-page__hud console__hud">
-              <span className="console__hud-label ui-label">Sim time</span>
+              <span className="console__hud-label ui-label">
+                {realTime ? 'Real time' : 'Sim time'}
+              </span>
               <span className="console__hud-clock ui-readout">
                 {telemetry.simTime ? formatSimClock(telemetry.simTime) : '—'}
               </span>
-              {/* The multiplier is always on screen: motion is sped up, and the
-                  view must never be mistaken for literal real-time. */}
-              <span className="console__hud-speed">×{DEFAULT_SPEED_MULTIPLIER}</span>
+              {/* The rate is always on screen, so sped-up motion is never
+                  mistaken for real time — and real time is said outright. */}
+              <span className={`console__hud-speed${realTime ? ' is-live' : ''}`}>
+                {realTime ? 'LIVE ×1' : `×${DEFAULT_SPEED_MULTIPLIER}`}
+              </span>
+              <button
+                type="button"
+                className="console__hud-toggle"
+                onClick={() => setRealTime((r) => !r)}
+                title={
+                  realTime
+                    ? `Speed the clock up ×${DEFAULT_SPEED_MULTIPLIER} so orbital motion is visible`
+                    : 'Return to real time: positions at this actual second'
+                }
+              >
+                {realTime ? `×${DEFAULT_SPEED_MULTIPLIER}` : 'Real time'}
+              </button>
             </div>
           </div>
 
@@ -254,6 +299,16 @@ function Console({ view, onChangeView }) {
                   <span className="console__feed-key">Groups</span>
                   <span className="console__feed-val ui-readout" title={serverGroups.join(', ')}>
                     {serverGroups.length ? serverGroups.join(', ') : '—'}
+                  </span>
+                </div>
+                <div className="console__feed-row">
+                  <span className="console__feed-key">Provider</span>
+                  <span className="console__feed-val ui-readout">{describeProviders(providers)}</span>
+                </div>
+                <div className="console__feed-row">
+                  <span className="console__feed-key">Elements fetched</span>
+                  <span className="console__feed-val ui-readout">
+                    {cachedAt ? describeAge(cachedAt) : '—'}
                   </span>
                 </div>
                 <div className="console__feed-row">
