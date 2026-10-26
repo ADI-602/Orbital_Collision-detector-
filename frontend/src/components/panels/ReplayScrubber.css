@@ -1,0 +1,95 @@
+.replay-scrubber {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-2);
+  border-radius: var(--radius-inner);
+  background: rgba(9, 11, 15, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+
+/* Room above the slider for the two marks. */
+.replay-scrubber__track {
+  position: relative;
+  padding-top: 22px;
+}
+
+.replay-scrubber__range {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  /* The mark maths in ReplayScrubber.jsx assumes a 16 px thumb. */
+  height: 16px;
+
+  &::-webkit-slider-thumb {
+    width: 16px;
+    height: 16px;
+  }
+  &::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+}
+
+/* A labelled tick above the track; clickable to jump there. */
+.replay-scrubber__mark {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-pill);
+  background: rgba(9, 11, 15, 0.9);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  cursor: pointer;
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    width: 1px;
+    height: 6px;
+    background: currentColor;
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+/* The burn is a proposed action: chrome. The TCA mark takes the event's own
+   risk colour inline, and is neutral until there is one. */
+.replay-scrubber__mark--burn {
+  color: var(--accent);
+}
+
+.replay-scrubber__mark--tca {
+  color: var(--text-secondary);
+}
+
+.replay-scrubber__keys {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+.replay-scrubber__keys kbd {
+  padding: 0 4px;
+  border: 1px solid var(--card-border-hover);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  color: var(--text-secondary);
+}

@@ -27,6 +27,7 @@ import {
   formatBand,
   formatTMinus,
   isoToMs,
+  replayElapsedFor,
   replayProgress,
   replaySimTime,
   replayWindow,
@@ -57,6 +58,34 @@ describe('replayWindow', () => {
   it('honours an explicit lead and trail', () => {
     const w = replayWindow(TCA_MS, { leadMinutes: 5, trailMinutes: 1 })
     expect(w.spanMs).toBe(6 * MINUTE)
+  })
+})
+
+describe('replayElapsedFor', () => {
+  it('is the inverse of replaySimTime inside the window', () => {
+    const { startMs, spanMs } = replayWindow(TCA_MS)
+    for (const offset of [0, 10 * MINUTE, 60 * MINUTE, spanMs - MINUTE]) {
+      const target = startMs + offset
+      const back = replaySimTime(TCA_MS, replayElapsedFor(TCA_MS, target)).getTime()
+      expect(Math.abs(back - target)).toBeLessThan(1)
+    }
+  })
+
+  it('lands on the TCA and on the burn instant exactly', () => {
+    const burnMs = TCA_MS - 50 * MINUTE
+    expect(replaySimTime(TCA_MS, replayElapsedFor(TCA_MS, TCA_MS)).getTime()).toBe(TCA_MS)
+    expect(replaySimTime(TCA_MS, replayElapsedFor(TCA_MS, burnMs)).getTime()).toBe(burnMs)
+  })
+
+  it('clamps outside the window, and never wraps the end back to the start', () => {
+    const { startMs, endMs } = replayWindow(TCA_MS)
+    expect(replayElapsedFor(TCA_MS, startMs - 5 * MINUTE)).toBe(0)
+    const atEnd = replaySimTime(TCA_MS, replayElapsedFor(TCA_MS, endMs + 5 * MINUTE)).getTime()
+    expect(atEnd).toBeGreaterThan(endMs - MINUTE)
+  })
+
+  it('returns 0 for an unreadable target', () => {
+    expect(replayElapsedFor(TCA_MS, NaN)).toBe(0)
   })
 })
 

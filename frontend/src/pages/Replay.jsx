@@ -12,6 +12,7 @@ import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AdvisorPanel from '../components/panels/AdvisorPanel.jsx'
 import ManeuverPanel from '../components/panels/ManeuverPanel.jsx'
 import PredictionTable from '../components/panels/PredictionTable.jsx'
+import ReplayScrubber from '../components/panels/ReplayScrubber.jsx'
 import StatusHeader from '../components/panels/StatusHeader.jsx'
 import { useEnvisatReplay } from '../hooks/useEnvisatReplay.js'
 import { useAiAdvice } from '../hooks/useAiAdvice.js'
@@ -33,6 +34,7 @@ import {
   REPLAY_SCREEN_WINDOW_HOURS,
   REPLAY_SPEED_MULTIPLIER,
   REPLAY_TRAIL_MINUTES,
+  replayElapsedFor,
   replaySimTime,
 } from '../lib/replay.js'
 import { formatSimClock } from '../lib/simClock.js'
@@ -115,6 +117,64 @@ function Replay({ view, onChangeView }) {
   const restart = useCallback(() => {
     playedMsRef.current = 0
   }, [])
+
+  // Put the replay clock on an exact 2004 instant (scrubber, B/T/arrow keys).
+  // Moves the clock only; every figure on the page is unaffected.
+  const seek = useCallback(
+    (targetSimMs) => {
+      if (!Number.isFinite(tcaMs)) return
+      playedMsRef.current = replayElapsedFor(tcaMs, targetSimMs)
+    },
+    [tcaMs],
+  )
+  const seekBy = useCallback(
+    (deltaMs) => {
+      if (!Number.isFinite(tcaMs)) return
+      seek(replaySimTime(tcaMs, playedMsRef.current).getTime() + deltaMs)
+    },
+    [tcaMs, seek],
+  )
+
+  // Presenter shortcuts. Ignored while typing in a field, with a modifier
+  // held, or on a focused button (where Space and Enter already mean "press").
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
+      const target = event.target
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return
+      if (tag === 'BUTTON' && (event.key === ' ' || event.key === 'Enter')) return
+      const burnMs = tcaMs - HISTORICAL_MANEUVER.leadTimeMinutes * 60_000
+      switch (event.key) {
+        case ' ':
+          setPaused((p) => !p)
+          break
+        case 'r':
+        case 'R':
+          restart()
+          break
+        case 'ArrowLeft':
+          seekBy(-60_000)
+          break
+        case 'ArrowRight':
+          seekBy(60_000)
+          break
+        case 'b':
+        case 'B':
+          seek(burnMs)
+          break
+        case 't':
+        case 'T':
+          seek(tcaMs)
+          break
+        default:
+          return
+      }
+      event.preventDefault()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [tcaMs, restart, seek, seekBy])
 
   const handleTelemetry = useCallback((next) => setTelemetry(next), [])
   const {
@@ -243,6 +303,13 @@ function Replay({ view, onChangeView }) {
                 </span>
               </div>
             </div>
+
+            <ReplayScrubber
+              tcaMs={tcaMs}
+              simMs={simMs}
+              onSeek={seek}
+              tcaColorHex={headline ? riskColorHex(headline) : undefined}
+            />
           </div>
 
           {/* --- Left rail: what this is ------------------------------- */}

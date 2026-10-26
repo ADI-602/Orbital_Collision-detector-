@@ -172,6 +172,28 @@ export function replaySimTime(tcaMs, elapsedRealMs, opts = {}) {
 }
 
 /**
+ * The inverse of replaySimTime: how much elapsed real time puts the replay
+ * clock on `targetSimMs`. This is what lets a timeline scrubber jump the clock
+ * to an exact 2004 instant — the burn, the TCA — without a second clock.
+ *
+ * Clamped into the window, and to just short of its end: the end instant is
+ * the same as the start after the wrap, and a scrub to "the end" must not
+ * land back at the beginning.
+ *
+ * @param {number} tcaMs
+ * @param {number} targetSimMs the 2004 instant to show
+ * @param {{leadMinutes?: number, trailMinutes?: number, speedMultiplier?: number}} [opts]
+ * @returns {number} real milliseconds
+ */
+export function replayElapsedFor(tcaMs, targetSimMs, opts = {}) {
+  const { startMs, spanMs } = replayWindow(tcaMs, opts)
+  if (!(spanMs > 0) || !Number.isFinite(targetSimMs)) return 0
+  const speed = opts.speedMultiplier ?? REPLAY_SPEED_MULTIPLIER
+  const offset = Math.min(Math.max(targetSimMs - startMs, 0), spanMs - 1)
+  return offset / speed
+}
+
+/**
  * How far through the current replay loop we are, 0..1 — for a progress bar.
  *
  * @param {number} tcaMs
