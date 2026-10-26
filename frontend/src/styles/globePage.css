@@ -115,7 +115,7 @@
  */
 .globe-page__rail > .globe-page__float--fill:not(.is-collapsed):not([style*='height']) {
   flex: 1 1 0;
-  min-height: 200px;
+  min-height: 180px;
 }
 
 /* Docked bottom-centre between the rails; grows upwards from its north edge. */

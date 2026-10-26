@@ -1,29 +1,60 @@
 .selected-object {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
-.selected-object__row {
+.selected-object__id {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: 6px var(--space-3);
+}
+
+.selected-object__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.selected-object__norad {
+  flex: none;
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+}
+
+/* Latitude, longitude, altitude side by side: one row instead of three. */
+.selected-object__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.selected-object__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px var(--space-2);
   border-radius: var(--radius-inner);
   background: var(--card-fill);
 }
 
 .selected-object__key {
   font-family: var(--font-sans);
-  font-size: var(--fs-caption);
+  font-size: var(--fs-micro);
   color: var(--text-dim);
   white-space: nowrap;
 }
 
 .selected-object__val {
+  margin: 0;
   font-size: var(--fs-caption);
-  text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

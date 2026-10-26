@@ -61,8 +61,9 @@ import './CesiumGlobe.css'
  *   propagator as the rings — never a figure.
  * @param {((id: string, at: Date, frameWhen: Date) => {x: number, y: number, z: number}|null) | null} [props.orbitPointFor]
  *   supplies that position, km ECEF; from whichever hook owns the element sets.
- * @param {{nonce: number} | null} [props.focusRequest]
- *   fly the camera to the encounter marker. A new `nonce` repeats the flight.
+ * @param {{nonce: number, objectId?: string} | null} [props.focusRequest]
+ *   fly the camera to a tracked object's marker (`objectId`) or, without one,
+ *   to the encounter marker. A new `nonce` repeats the flight.
  * @param {{longitude_deg: number, latitude_deg: number} | null} [props.initialView]
  *   where to point the camera, applied once per distinct location (to ~0.1°)
  *   so it never fights a viewer who has since dragged the globe. The replay
@@ -305,13 +306,19 @@ function CesiumGlobe({
     applyInitialView(viewerRef.current, initialViewRef.current, appliedViewRef)
   }, [viewLon, viewLat])
 
-  // Fly to the closest-approach marker where it stands now. Reduced-motion
-  // users get a cut, not a flight.
+  // Fly to a tracked object's marker, or to the closest-approach marker,
+  // where it stands now. Reduced-motion users get a cut, not a flight.
   const focusNonce = focusRequest?.nonce ?? null
+  const focusRef = useRef(focusRequest)
+  focusRef.current = focusRequest
   useEffect(() => {
     const viewer = viewerRef.current
-    const position = encounterEntityRef.current?.position
-    if (focusNonce === null || !viewer || viewer.isDestroyed() || !position) return
+    if (focusNonce === null || !viewer || viewer.isDestroyed()) return
+    const objectId = focusRef.current?.objectId
+    const position = objectId
+      ? entitiesRef.current.get(objectId)?.position?.getValue(Cesium.JulianDate.now())
+      : encounterEntityRef.current?.position
+    if (!position) return
     const carto = Cesium.Cartographic.fromCartesian(position)
     if (!carto) return
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches

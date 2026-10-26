@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { API_BASE_URL } from '../api/client.js'
 import ErrorState from '../components/common/ErrorState.jsx'
 import FloatingPanel from '../components/common/FloatingPanel.jsx'
+import ObjectSearch from '../components/common/ObjectSearch.jsx'
 import Term from '../components/common/Term.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AssetStrip from '../components/panels/AssetStrip.jsx'
@@ -116,6 +117,7 @@ function sourceFootnote({ loading, source, snapshotEpoch, cachedAt }) {
 function Console({ view, onChangeView }) {
   const health = useHealth()
   const {
+    records,
     count,
     loading,
     error: tleError,
@@ -222,6 +224,12 @@ function Console({ view, onChangeView }) {
   const [focusRequest, setFocusRequest] = useState(null)
   const showEncounterOnGlobe = useCallback(() => setFocusRequest({ nonce: Date.now() }), [])
 
+  // Search pick: select the object, then fly to it.
+  const handlePickObject = useCallback((id) => {
+    setSelectedId(id)
+    setFocusRequest({ objectId: id, nonce: Date.now() })
+  }, [])
+
   return (
     <div className="globe-page console">
       {/* The globe is the page. Everything else floats over it. */}
@@ -316,6 +324,8 @@ function Console({ view, onChangeView }) {
               resize={['e', 's']}
               className="globe-page__float"
             >
+              <ObjectSearch objects={records} onPick={handlePickObject} />
+
               <div className="console__count">
                 <span className="console__count-value ui-readout">{loading ? '—' : count}</span>
                 <span className="console__count-unit">

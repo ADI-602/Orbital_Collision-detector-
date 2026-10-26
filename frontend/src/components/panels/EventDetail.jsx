@@ -116,6 +116,16 @@ function EventDetail({ event, onOpenReplay, onShowOnGlobe }) {
           {coOrbital ? <RiskBadge label="Co-orbital" /> : <RiskBadge level={event.threat_level} />}
           {/* The tag stays on screen; its full provenance is one click away. */}
           {injected && <span className="event-detail__tag">Injected · 2004 replay</span>}
+          {onShowOnGlobe && (
+            <button
+              type="button"
+              className="event-detail__globe-button"
+              onClick={onShowOnGlobe}
+              title="Fly the globe to where these two objects meet at TCA"
+            >
+              Show on globe
+            </button>
+          )}
         </div>
       </div>
 
@@ -185,12 +195,6 @@ function EventDetail({ event, onOpenReplay, onShowOnGlobe }) {
         )
       ) : (
         <TMinus targetMs={isoToMs(event.tca_utc_iso)} mode="wall" />
-      )}
-
-      {onShowOnGlobe && (
-        <button type="button" className="event-detail__replay-button" onClick={onShowOnGlobe}>
-          Show encounter on globe
-        </button>
       )}
 
       {/* The one provenance line that must never be hidden. */}
