@@ -29,14 +29,24 @@ replaced whole, so a reader never sees half a pass. Every snapshot carries the
 stats of the run that produced it — including whether refinement was truncated
 — because a partial screening is a different claim from a complete one and the
 UI has to be able to say which it got.
+
+SURVIVING A RESTART. A completed pass is saved to disk, and on start the
+monitor serves it again — marked `restored` — until a fresh pass replaces it,
+instead of showing nothing for the minutes a new pass takes. Only while its
+screening window is still open: a pass whose window has ended describes
+encounters that are all in the past, and is discarded rather than served as
+current. A corrupt or foreign file is ignored, never guessed at.
 """
 
+import json
 import logging
 import multiprocessing
+import os
 import threading
 import time
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields, replace
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from skyfield.api import load
@@ -118,10 +128,90 @@ class ScreeningRun:
     stats: Dict[str, Any] = field(default_factory=dict)
     objects_tracked: int = 0
     error: Optional[str] = None
+    # True while the events are a pass saved before the last restart, until a
+    # fresh pass completes. Their timing (finished_at) is that pass's own.
+    restored: bool = False
 
     @property
     def high_risk_count(self) -> int:
         return sum(1 for e in self.events if e.get("threat_level") == "RED")
+
+
+# Bumped whenever the saved shape changes; any other version is ignored.
+PERSIST_VERSION = 1
+
+
+def _window_end_unix(run: ScreeningRun) -> Optional[float]:
+    """When a pass's screening window closes, or None if it cannot be read."""
+    if not run.window_start_utc_iso or not run.window_hours:
+        return None
+    try:
+        start = datetime.strptime(run.window_start_utc_iso, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
+    end = start.replace(tzinfo=timezone.utc) + timedelta(hours=float(run.window_hours))
+    return end.timestamp()
+
+
+def save_run(path: str, run: ScreeningRun) -> bool:
+    """
+    Write a completed pass to disk, atomically. Anything but a completed pass
+    is not saved. Returns whether it wrote; a failure is logged, never raised —
+    persistence is a convenience and must not fail a pass.
+    """
+    if run.state != "ready":
+        return False
+    payload = {
+        "version": PERSIST_VERSION,
+        "saved_at_unix": time.time(),
+        "run": asdict(replace(run, restored=False)),
+    }
+    tmp = f"{path}.tmp"
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp, path)
+        return True
+    except OSError as exc:
+        logger.warning("monitoring: could not save the last pass to %s: %s", path, exc)
+        return False
+
+
+def load_run(path: str, now_unix: Optional[float] = None) -> Optional[ScreeningRun]:
+    """
+    The saved pass, marked restored — or None if there is none, it cannot be
+    read, it is from another version, or its screening window has ended.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        logger.warning("monitoring: ignoring unreadable saved pass %s: %s", path, exc)
+        return None
+
+    if not isinstance(payload, dict) or payload.get("version") != PERSIST_VERSION:
+        logger.info("monitoring: ignoring saved pass %s from another version", path)
+        return None
+    data = payload.get("run")
+    if not isinstance(data, dict) or data.get("state") != "ready":
+        return None
+
+    known = {f.name for f in fields(ScreeningRun)}
+    try:
+        run = ScreeningRun(**{k: v for k, v in data.items() if k in known})
+    except TypeError as exc:
+        logger.warning("monitoring: ignoring malformed saved pass %s: %s", path, exc)
+        return None
+
+    end = _window_end_unix(run)
+    now = time.time() if now_unix is None else now_unix
+    if end is None or end <= now:
+        logger.info("monitoring: saved pass %s has an ended window; not restoring it", path)
+        return None
+    return replace(run, restored=True)
 
 
 class ScreeningMonitor:
@@ -151,8 +241,11 @@ class ScreeningMonitor:
         timestep_s: float = 60.0,
         max_refine_pairs: Optional[int] = 300,
         use_process: bool = False,
+        persist_path: Optional[str] = None,
     ):
         self._tracked = tracked_set
+        # Where the last completed pass is saved, and restored from on start.
+        self._persist_path = persist_path
         self._interval_s = interval_s
         self._window_hours = window_hours
         self._threshold_km = threshold_km
@@ -179,6 +272,9 @@ class ScreeningMonitor:
     def start(self) -> None:
         if self._thread is not None:
             return
+        # Restored here rather than in __init__, so importing the app (as the
+        # tests do) never picks up a pass saved on this machine.
+        self._restore_saved_run()
         self._stop.clear()
         self._thread = threading.Thread(
             target=self._loop, name="screening-monitor", daemon=True,
@@ -188,6 +284,25 @@ class ScreeningMonitor:
             "monitoring: started, every %.0f s over a %.0f h window",
             self._interval_s, self._window_hours,
         )
+
+    def _restore_saved_run(self) -> bool:
+        """Serve the saved pass until a fresh one completes. Returns whether it did."""
+        if not self._persist_path or self._run.state != "never_run":
+            return False
+        restored = load_run(self._persist_path)
+        if restored is None:
+            return False
+        self._run = restored
+        # Already reported before the restart; not news now.
+        with self._run_lock:
+            self._alerted.update(
+                _event_key(e) for e in restored.events if e.get("threat_level") == "RED"
+            )
+        logger.info(
+            "monitoring: restored the saved pass (%d event(s)) until a fresh one completes",
+            len(restored.events),
+        )
+        return True
 
     def stop(self) -> None:
         self._stop.set()
@@ -239,6 +354,7 @@ class ScreeningMonitor:
                     events=self._run.events,
                     stats=self._run.stats,
                     objects_tracked=self._run.objects_tracked,
+                    restored=self._run.restored,
                 )
 
             self._wake.wait(timeout=self._interval_s)
@@ -262,6 +378,7 @@ class ScreeningMonitor:
             events=previous.events,
             stats=previous.stats,
             objects_tracked=snapshot.count,
+            restored=previous.restored,
         )
 
         if snapshot.count < 2:
@@ -309,6 +426,8 @@ class ScreeningMonitor:
             error=None,
         )
         self._record_new_high_risk(events)
+        if self._persist_path:
+            save_run(self._persist_path, self._run)
 
         logger.info(
             "monitoring: pass complete in %.1fs — %d event(s), %d high risk",

@@ -109,6 +109,8 @@ async function readMonitoringPass(signal) {
       window_hours: payload.window_hours ?? null,
       finished_at_unix: payload.finished_at_unix ?? null,
       stats: payload.stats ?? null,
+      // Served from disk after a backend restart, until a fresh pass lands.
+      restored: payload.restored === true,
       error: payload.error ?? null,
     },
   }

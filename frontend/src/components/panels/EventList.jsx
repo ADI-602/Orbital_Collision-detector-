@@ -140,6 +140,14 @@ function EventList({
                 (live.notAssessed > 0 ? ` · ${live.notAssessed} not assessed` : '') +
                 ` · ${formatCount(pass?.stats?.objects_in)} objects` +
                 ` · ${formatPassAge(pass?.finished_at_unix)}`}
+          {pass?.restored && !liveError && (
+            <span
+              className="event-list__restored"
+              title="The backend restarted since this pass ran. It is the last completed pass, saved to disk, with its own timing; a fresh pass replaces it when it completes."
+            >
+              Restored after restart
+            </span>
+          )}
         </span>
         <span className="event-list__actions">
           {running && <span className="event-list__running ui-label">PASS RUNNING…</span>}

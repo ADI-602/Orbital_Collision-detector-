@@ -68,10 +68,17 @@ MONITOR_INTERVAL_S = float(os.environ.get("MONITOR_INTERVAL_S", "900"))
 MONITOR_MAX_REFINE = int(os.environ.get("MONITOR_MAX_REFINE", "300"))
 
 tracked_set = TrackedSet(TRACKED_GROUPS)
+# Where the last completed pass is kept across restarts. Gitignored.
+MONITOR_STATE_PATH = os.environ.get(
+    "MONITOR_STATE_PATH",
+    os.path.join(os.path.dirname(__file__), "..", ".cache", "last_screening_pass.json"),
+)
+
 monitor = ScreeningMonitor(
     tracked_set,
     interval_s=MONITOR_INTERVAL_S,
     max_refine_pairs=MONITOR_MAX_REFINE,
+    persist_path=MONITOR_STATE_PATH,
     # Screen in a worker process so a pass never starves API requests of the
     # GIL (see ScreeningMonitor). MONITOR_IN_PROCESS=1 reverts, for debugging.
     use_process=os.environ.get("MONITOR_IN_PROCESS") != "1",
@@ -464,6 +471,7 @@ def monitoring_status() -> Dict[str, Any]:
         "high_risk_count": run.high_risk_count,
         "stats": run.stats,
         "interval_s": MONITOR_INTERVAL_S,
+        "restored": run.restored,
         "error": run.error,
     }
 
@@ -488,6 +496,7 @@ def monitoring_events() -> Dict[str, Any]:
         "window_hours": run.window_hours,
         "finished_at_unix": run.finished_at,
         "stats": run.stats,
+        "restored": run.restored,
         "error": run.error,
     }
 
