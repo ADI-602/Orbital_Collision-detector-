@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../../api/client.js'
+import { resetPanelLayout } from '../../lib/panelLayout.js'
 import { useMissionClock } from '../../hooks/useMissionClock.js'
 import './StatusHeader.css'
 
@@ -77,6 +78,15 @@ function StatusHeader({ health, view = 'console', onChangeView }) {
       </div>
 
       <div className="status-header__right">
+        <button
+          type="button"
+          className="status-header__reset"
+          onClick={resetPanelLayout}
+          title="Put every panel back to its default size and expand any that are minimised"
+        >
+          Reset layout
+        </button>
+
         <div className="status-header__clock">
           <span className="status-header__clock-time ui-readout">{clock.timeUtc}</span>
           <span className="status-header__clock-zone">UTC</span>

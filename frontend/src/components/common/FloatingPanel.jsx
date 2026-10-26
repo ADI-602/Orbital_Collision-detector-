@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { PANEL_RESET_EVENT, PANEL_STORAGE_PREFIX as STORAGE_PREFIX } from '../../lib/panelLayout.js'
 import { resizedSize } from '../../lib/panelResize.js'
 import './GlassPanel.css'
 import './FloatingPanel.css'
-
-const STORAGE_PREFIX = 'ora.panel.'
 
 /** Per-browser layout memory only — never anything the app depends on. */
 function readStored(id) {
@@ -60,6 +59,15 @@ function FloatingPanel({
   useEffect(() => {
     writeStored(id, { collapsed, width: size.width, height: size.height })
   }, [id, collapsed, size.width, size.height])
+
+  useEffect(() => {
+    const onReset = () => {
+      setCollapsed(false)
+      setSize({ width: undefined, height: undefined })
+    }
+    window.addEventListener(PANEL_RESET_EVENT, onReset)
+    return () => window.removeEventListener(PANEL_RESET_EVENT, onReset)
+  }, [])
 
   const startResize = useCallback(
     (edge) => (event) => {
