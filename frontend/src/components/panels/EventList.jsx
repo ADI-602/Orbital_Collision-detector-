@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import ErrorState from '../common/ErrorState.jsx'
 import LoadingState from '../common/LoadingState.jsx'
 import RiskBadge from '../common/RiskBadge.jsx'
@@ -17,7 +19,16 @@ import {
   formatPassAge,
   summariseEvents,
 } from '../../lib/monitoring.js'
+import { EVENT_CATEGORIES, countByCategory, filterEvents } from '../../lib/eventFilter.js'
 import './EventList.css'
+
+/** Chip text for each filter category. */
+const CATEGORY_LABEL = {
+  RED: 'RED',
+  YELLOW: 'YELLOW',
+  GREEN: 'GREEN',
+  OTHER: 'Co-orbital / not assessed',
+}
 
 /**
  * Conjunction events from the scheduled screening pass, most serious first.
@@ -71,6 +82,17 @@ function EventList({
   onRefresh,
   onScreenNow,
 }) {
+  // Categories the operator has switched off. A display filter only; what it
+  // hides is always counted on screen below (lib/eventFilter.js).
+  const [hidden, setHidden] = useState(() => new Set())
+  const toggleCategory = (category) =>
+    setHidden((prev) => {
+      const next = new Set(prev)
+      if (next.has(category)) next.delete(category)
+      else next.add(category)
+      return next
+    })
+
   if (status === 'loading') {
     return (
       <div className="event-list event-list--busy">
@@ -94,6 +116,9 @@ function EventList({
   const neverRun = pass?.state === PASS_STATE.NEVER_RUN
   const passFailed = pass?.state === PASS_STATE.FAILED
   const running = watchingPass || pass?.state === PASS_STATE.RUNNING
+  const counts = countByCategory(events)
+  const visibleEvents = filterEvents(events, hidden)
+  const hiddenCount = events.length - visibleEvents.length
   // Running with nothing completed behind it: there is no result yet, so the
   // panel must not report "0 conjunctions" or "no close approaches" — both
   // are claims about a screening that has not happened.
@@ -206,8 +231,37 @@ function EventList({
       )}
 
       {events.length > 0 && (
+        <div className="event-list__filters" role="group" aria-label="Show events by threat level">
+          {EVENT_CATEGORIES.map((category) =>
+            counts[category] > 0 ? (
+              <button
+                key={category}
+                type="button"
+                className={`event-filter event-filter--${category.toLowerCase()}`}
+                aria-pressed={!hidden.has(category)}
+                onClick={() => toggleCategory(category)}
+                title={hidden.has(category) ? 'Show these events' : 'Hide these events'}
+              >
+                <span className="event-filter__dot" aria-hidden="true" />
+                {CATEGORY_LABEL[category]}
+                <span className="event-filter__count ui-readout">{counts[category]}</span>
+              </button>
+            ) : null,
+          )}
+          {hiddenCount > 0 && (
+            <span className="event-list__hidden">
+              {hiddenCount} hidden by filter
+              <button type="button" className="event-list__show-all" onClick={() => setHidden(new Set())}>
+                Show all
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
+      {visibleEvents.length > 0 && (
         <div className="event-list__rows" role="list">
-          {events.map((event) => {
+          {visibleEvents.map((event) => {
             const key = eventKey(event)
             const coOrbital = isCoOrbital(event)
             const unassessable = isUnassessable(event)
