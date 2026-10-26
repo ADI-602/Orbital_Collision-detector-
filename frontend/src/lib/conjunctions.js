@@ -153,12 +153,6 @@ export function hasGlobePresence(event) {
 }
 
 /**
- * Colour for the globe highlight and connecting line — mirrors RiskBadge's
- * palette (styles/tokens.css --risk-*) so the globe and the list agree.
- * Duplicated as literal hex because Cesium's canvas rendering has no access
- * to CSS custom properties.
- */
-/**
  * The Pc boundaries the backend assigns threat levels by, mirrored for
  * DISPLAY ONLY (legend, badge tooltip). The level on every event is still the
  * backend's own `threat_level`; nothing here re-derives one. Keep in step with
@@ -166,6 +160,12 @@ export function hasGlobePresence(event) {
  */
 export const THREAT_THRESHOLDS = { RED: 1e-4, YELLOW: 1e-5 }
 
+/**
+ * Colour for the globe highlight and connecting line — mirrors RiskBadge's
+ * palette (styles/tokens.css --risk-*) so the globe and the list agree.
+ * Duplicated as literal hex because Cesium's canvas rendering has no access
+ * to CSS custom properties.
+ */
 const RISK_LINE_HEX = { RED: '#f43f5e', YELLOW: '#fbbf24', GREEN: '#4ade80' }
 const UNKNOWN_LINE_HEX = '#71717a'
 
