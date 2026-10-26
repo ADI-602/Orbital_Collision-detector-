@@ -32,18 +32,76 @@ UI has to be able to say which it got.
 """
 
 import logging
+import multiprocessing
 import threading
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from skyfield.api import load
 
 from backend.api.assessment import assess_conjunction
 from backend.api.tracked_set import TrackedSet
 from backend.physics.screening import screen_all_pairs
+from backend.physics.tle_ingest import parse_tle_pair
 
 logger = logging.getLogger(__name__)
+
+
+# (object_id, name, line1, line2) — plain strings, so it crosses a process
+# boundary without pickling Skyfield objects.
+ElementSet = Tuple[str, str, str, str]
+
+
+def compute_pass(
+    element_sets: List[ElementSet],
+    window_hours: float,
+    timestep_s: float,
+    threshold_km: float,
+    max_refine_pairs: Optional[int],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any], str]:
+    """
+    One full screening pass: element sets in, ranked events and stats out.
+
+    Top-level and free of shared state so it can run in a worker PROCESS. It
+    is the same pipeline either way — screen_all_pairs, then assess_conjunction
+    per candidate — only where it executes changes.
+
+    Returns (events, stats, window_start_utc_iso).
+    """
+    by_norad: Dict[str, str] = {}
+    satellites = []
+    for object_id, name, line1, line2 in element_sets:
+        sat = parse_tle_pair(line1, line2, name)
+        by_norad.setdefault(str(sat.model.satnum), object_id)
+        satellites.append(sat)
+
+    ts = load.timescale()
+    start_time = ts.now()
+    end_time = ts.tt_jd(start_time.tt + window_hours / 24.0)
+
+    candidates, stats = screen_all_pairs(
+        satellites,
+        start_time,
+        end_time,
+        timestep_s=timestep_s,
+        threshold_km=threshold_km,
+        max_refine_pairs=max_refine_pairs,
+    )
+
+    events: List[Dict[str, Any]] = []
+    for candidate in candidates:
+        record = assess_conjunction(candidate, ts)
+        if record is None:
+            continue
+        # Attach the tracked-set ids so the globe can find both markers.
+        record["primary_id"] = by_norad.get(str(candidate.primary.model.satnum))
+        record["secondary_id"] = by_norad.get(str(candidate.secondary.model.satnum))
+        events.append(record)
+
+    events.sort(key=_event_sort_key, reverse=True)
+    return events, stats, start_time.utc_strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass(frozen=True)
@@ -70,9 +128,18 @@ class ScreeningMonitor:
     """
     Runs all-pairs screening over the tracked set, repeatedly, in the background.
 
-    One worker thread. Screening is CPU-bound numpy and SGP4, so it must not
+    One scheduler thread. Screening is CPU-bound numpy and SGP4, so it must not
     run on the event loop — a request arriving mid-pass would otherwise wait
     for the whole pass.
+
+    WHY `use_process`. A thread is not enough on its own. Much of a pass is
+    pure-Python SGP4 holding the GIL, and measured against the live 700-object
+    set, every API request crawled while a pass ran (/health went from ~5 ms to
+    seconds; an AI advise call queued for over a minute and timed out). With
+    `use_process=True` the computation runs in a separate worker process with
+    its own GIL, and this thread only waits on it, so the API stays responsive
+    throughout. The server enables it; tests leave it off so they can patch
+    the pipeline in-process.
     """
 
     def __init__(
@@ -83,6 +150,7 @@ class ScreeningMonitor:
         threshold_km: float = 5.0,
         timestep_s: float = 60.0,
         max_refine_pairs: Optional[int] = 300,
+        use_process: bool = False,
     ):
         self._tracked = tracked_set
         self._interval_s = interval_s
@@ -90,6 +158,10 @@ class ScreeningMonitor:
         self._threshold_km = threshold_km
         self._timestep_s = timestep_s
         self._max_refine_pairs = max_refine_pairs
+        self._use_process = use_process
+        # One long-lived worker, so its imports (Skyfield, SGP4, SciPy) are
+        # paid once rather than on every pass.
+        self._executor: Optional[ProcessPoolExecutor] = None
 
         self._run = ScreeningRun(state="never_run")
         self._thread: Optional[threading.Thread] = None
@@ -123,6 +195,10 @@ class ScreeningMonitor:
         thread, self._thread = self._thread, None
         if thread is not None:
             thread.join(timeout=5.0)
+        executor, self._executor = self._executor, None
+        if executor is not None:
+            # Don't wait for an in-flight pass; its result is no longer wanted.
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def trigger(self) -> None:
         """Ask for a pass now. Returns immediately; never blocks the caller."""
@@ -190,36 +266,26 @@ class ScreeningMonitor:
             )
             return
 
-        ts = load.timescale()
-        start_time = ts.now()
-        end_time = ts.tt_jd(start_time.tt + self._window_hours / 24.0)
-
-        candidates, stats = screen_all_pairs(
-            [o.satellite for o in snapshot.objects],
-            start_time,
-            end_time,
-            timestep_s=self._timestep_s,
-            threshold_km=self._threshold_km,
-            max_refine_pairs=self._max_refine_pairs,
+        element_sets: List[ElementSet] = [
+            (o.object_id, o.name, o.line1, o.line2) for o in snapshot.objects
+        ]
+        args = (
+            element_sets,
+            self._window_hours,
+            self._timestep_s,
+            self._threshold_km,
+            self._max_refine_pairs,
         )
-
-        by_norad = {}
-        for obj in snapshot.objects:
-            by_norad.setdefault(str(obj.satellite.model.satnum), obj)
-
-        events: List[Dict[str, Any]] = []
-        for candidate in candidates:
-            record = assess_conjunction(candidate, ts)
-            if record is None:
-                continue
-            # Attach the tracked-set ids so the globe can find both markers.
-            primary = by_norad.get(str(candidate.primary.model.satnum))
-            secondary = by_norad.get(str(candidate.secondary.model.satnum))
-            record["primary_id"] = primary.object_id if primary else None
-            record["secondary_id"] = secondary.object_id if secondary else None
-            events.append(record)
-
-        events.sort(key=_event_sort_key, reverse=True)
+        if self._use_process:
+            if self._executor is None:
+                # spawn, explicitly: a forked child would inherit the API's
+                # threads and locks in whatever state they were in.
+                self._executor = ProcessPoolExecutor(
+                    max_workers=1, mp_context=multiprocessing.get_context("spawn"),
+                )
+            events, stats, window_start_iso = self._executor.submit(compute_pass, *args).result()
+        else:
+            events, stats, window_start_iso = compute_pass(*args)
 
         finished = time.time()
         self._run = ScreeningRun(
@@ -227,7 +293,7 @@ class ScreeningMonitor:
             started_at=started,
             finished_at=finished,
             duration_s=finished - started,
-            window_start_utc_iso=start_time.utc_strftime("%Y-%m-%dT%H:%M:%SZ"),
+            window_start_utc_iso=window_start_iso,
             window_hours=self._window_hours,
             events=events,
             stats=stats,

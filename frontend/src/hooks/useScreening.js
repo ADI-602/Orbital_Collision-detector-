@@ -77,6 +77,16 @@ const STATUS_POLL_MS = 4000
 const STATUS_POLL_TIMEOUT_MS = 10 * 60 * 1000
 
 /**
+ * How often to check whether a SCHEDULED pass has landed.
+ *
+ * The server screens on its own timer (every 15 min by default), and nothing
+ * told the console a new pass existed: results only refreshed on load or a
+ * button press, so a new detection could sit unseen until someone reloaded.
+ * This is the same cheap status read, just on a slow background cadence.
+ */
+const SCHEDULED_PASS_POLL_MS = 30 * 1000
+
+/**
  * Read the last completed scheduled pass.
  *
  * The server ranks events already (assessed before refused, then threat band,
@@ -190,14 +200,20 @@ export function useScreening() {
     }
   }, [stopPolling])
 
-  const refresh = useCallback(async () => {
+  // `silent` re-reads without dropping to the loading state, so a background
+  // refresh after a scheduled pass does not blank the list under the user.
+  // Checked as `=== true` because this is also bound directly to onClick.
+  const refresh = useCallback(async (opts) => {
+    const silent = opts?.silent === true
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
 
-    setStatus('loading')
-    setLiveError(null)
-    setValidationError(null)
+    if (!silent) {
+      setStatus('loading')
+      setLiveError(null)
+      setValidationError(null)
+    }
 
     // Settled, not all: the two sources are independent evidence. The
     // monitoring feed going down must not take the validation case off screen,
@@ -215,6 +231,7 @@ export function useScreening() {
     if (live.status === 'fulfilled') {
       collected.push(...live.value.events)
       setPass(live.value.pass)
+      setLiveError(null)
     } else if (!(live.reason instanceof CanceledError)) {
       setLiveError(live.reason)
       setPass(null)
@@ -222,6 +239,7 @@ export function useScreening() {
 
     if (validation.status === 'fulfilled') {
       collected.push(...validation.value)
+      setValidationError(null)
     } else if (!(validation.reason instanceof CanceledError)) {
       setValidationError(validation.reason)
     }
@@ -238,6 +256,25 @@ export function useScreening() {
   // user press a button for. This is a cached read, not a screening run.
   useEffect(() => {
     refresh()
+  }, [refresh])
+
+  // Notice scheduled passes. Re-reads only when the server reports a pass
+  // that finished after the one on screen; a status read failing is not a
+  // screening failure, so it is ignored and retried on the next tick.
+  const passRef = useRef(pass)
+  passRef.current = pass
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      try {
+        const s = await getMonitoringStatus()
+        if (!mountedRef.current || s.state === PASS_STATE.RUNNING) return
+        const shown = passRef.current?.finished_at_unix ?? 0
+        if (s.finished_at_unix && s.finished_at_unix > shown) refresh({ silent: true })
+      } catch {
+        // Next tick will try again.
+      }
+    }, SCHEDULED_PASS_POLL_MS)
+    return () => clearInterval(timer)
   }, [refresh])
 
   /**

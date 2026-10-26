@@ -72,6 +72,9 @@ monitor = ScreeningMonitor(
     tracked_set,
     interval_s=MONITOR_INTERVAL_S,
     max_refine_pairs=MONITOR_MAX_REFINE,
+    # Screen in a worker process so a pass never starves API requests of the
+    # GIL (see ScreeningMonitor). MONITOR_IN_PROCESS=1 reverts, for debugging.
+    use_process=os.environ.get("MONITOR_IN_PROCESS") != "1",
 )
 
 app = FastAPI(

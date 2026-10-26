@@ -7,6 +7,7 @@ import FloatingPanel from '../components/common/FloatingPanel.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AssetStrip from '../components/panels/AssetStrip.jsx'
 import AdvisorPanel from '../components/panels/AdvisorPanel.jsx'
+import ConjunctionAlerts from '../components/panels/ConjunctionAlerts.jsx'
 import EventDetail from '../components/panels/EventDetail.jsx'
 import ManeuverPanel from '../components/panels/ManeuverPanel.jsx'
 import SelectedObjectPanel from '../components/panels/SelectedObjectPanel.jsx'
@@ -14,6 +15,7 @@ import StatusHeader from '../components/panels/StatusHeader.jsx'
 import { useHealth } from '../hooks/useHealth.js'
 import { useLiveSatellites } from '../hooks/useLiveSatellites.js'
 import { useAiAdvice } from '../hooks/useAiAdvice.js'
+import { useConjunctionAlerts } from '../hooks/useConjunctionAlerts.js'
 import { useManeuver } from '../hooks/useManeuver.js'
 import { useScreening } from '../hooks/useScreening.js'
 import { eventKey, hasGlobePresence, riskColorHex } from '../lib/conjunctions.js'
@@ -158,6 +160,11 @@ function Console({ view, onChangeView }) {
   const handleSelect = useCallback((id) => setSelectedId(id), [])
   const handleSelectEvent = useCallback((key) => setSelectedEventKey(key), [])
 
+  // New elevated-risk detections from the scheduled screening, each with the
+  // AI's explanation attached afterwards. The physics raised the alert.
+  const conjunctionAlerts = useConjunctionAlerts(screening.events, screening.status === 'ready')
+  const handleViewAlert = useCallback((event) => setSelectedEventKey(eventKey(event)), [])
+
   const selected = useMemo(
     () => telemetry.satellites.find((s) => s.id === selectedId) ?? null,
     [telemetry.satellites, selectedId],
@@ -269,6 +276,14 @@ function Console({ view, onChangeView }) {
               </button>
             </div>
           </div>
+
+          <ConjunctionAlerts
+            alerts={conjunctionAlerts.alerts}
+            overflow={conjunctionAlerts.overflow}
+            onDismiss={conjunctionAlerts.dismiss}
+            onDismissAll={conjunctionAlerts.dismissAll}
+            onView={handleViewAlert}
+          />
 
           {/* --- Left rail: what is tracked, and the burn planner -------- */}
           <div className="globe-page__rail globe-page__rail--left">

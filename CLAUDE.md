@@ -285,6 +285,27 @@ would look identical on stage and collapse under one judge's question.
    `frontend/src/lib/monitoring.js` refuses to infer completeness from an
    absent `truncated` field.
 
+8. ~~No alert on new detections (§5.1.6).~~ **DONE (2026-10-06).**
+   `useConjunctionAlerts` raises a non-blocking alert for each NEW live RED or
+   YELLOW event: the pipeline's figures first, the AI's explanation fetched
+   afterwards and labelled LIVE / OFFLINE ADVISOR. "New" is per browser
+   (localStorage), matched by pair + TCA within 10 min, because each pass
+   re-refines TCA and exact matching would re-alert every pass. The injected
+   2004 case never alerts. `useScreening` now polls status every 30 s and
+   re-reads silently when a scheduled pass lands — before this, the console
+   never noticed scheduled passes at all. The backend's drain-on-read
+   `/api/monitoring/alerts` is intentionally unused: it hands each alert to
+   whichever single client polls first.
+
+   **Found while verifying, and fixed:** screening ran in a thread inside the
+   API process, and pure-Python SGP4 held the GIL, so during every pass all
+   API requests crawled (/health from ~5 ms to seconds; AI calls timed out).
+   Passes now run in a spawned worker process (`use_process=True`,
+   `MONITOR_IN_PROCESS=1` reverts). Measured during a pass: ~5 ms per request.
+   `tests/test_monitor_process.py` pins that the worker produces identical
+   numbers. When timing passes, keep headless Chrome off the machine — its
+   software rendering of 700 objects tripled one pass's wall time.
+
 ### What the screening architecture actually became
 
 Measured, not assumed. A full all-pairs pass over ~700 objects is roughly
