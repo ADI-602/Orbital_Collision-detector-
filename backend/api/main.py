@@ -26,6 +26,7 @@ from backend.ai.schema import AIAdvisorRequest, AIAdvisorResponse, ConjunctionCo
 from backend.api.assessment import assess_conjunction, threat_level
 from backend.api.monitoring import ScreeningMonitor
 from backend.api.tracked_set import TrackedSet
+from backend.api.validation import get_validation_report
 from backend.physics.collision_probability import _tle_covariance_rtn, compute_pc, covariance_rtn_to_eci
 from backend.physics.maneuver import simulate_maneuver
 from backend.physics.propagation import propagate
@@ -448,6 +449,20 @@ def tracking_objects() -> Dict[str, Any]:
         "rejected": snap.rejected,
         "error": snap.error,
     }
+
+
+@app.get("/api/validation/status", tags=["Validation"])
+def validation_status() -> Dict[str, Any]:
+    """
+    Run the known-answer checks and report them: the Alfano synthetic Pc case
+    and the four Envisat/Zenith-2 prediction days, judged by the regression
+    tests' own fixtures and bounds (backend/api/validation.py).
+
+    Computed by the physics pipeline on first request, then cached for the
+    life of the process — the inputs are fixed, so the answer cannot change.
+    Never an error response: a check that fails or cannot run says so.
+    """
+    return get_validation_report()
 
 
 @app.get("/api/monitoring/status", tags=["Tracking"])

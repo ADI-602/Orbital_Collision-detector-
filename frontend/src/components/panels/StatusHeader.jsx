@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../../api/client.js'
 import { resetPanelLayout } from '../../lib/panelLayout.js'
+import ValidationBadge from './ValidationBadge.jsx'
 import { useMissionClock } from '../../hooks/useMissionClock.js'
 import './StatusHeader.css'
 
@@ -78,6 +79,8 @@ function StatusHeader({ health, view = 'console', onChangeView }) {
       </div>
 
       <div className="status-header__right">
+        <ValidationBadge />
+
         <button
           type="button"
           className="status-header__reset"
