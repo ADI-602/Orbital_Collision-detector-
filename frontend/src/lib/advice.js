@@ -15,19 +15,25 @@ import { isoToMs } from './replay.js'
 /**
  * Build the POST /api/ai/advise body for a screening event.
  *
- * The maneuver option is included only when a burn has actually been
- * simulated for THIS event; the advisor is never handed a burn the pipeline
- * did not compute.
+ * Maneuver options are included only when burns have actually been simulated
+ * for THIS event; the advisor is never handed a burn the pipeline did not
+ * compute. One result, or several when burns were compared side by side —
+ * which is what gives the trade-off section real options to weigh.
  *
  * @param {object} event screening event (needs pc, miss_distance_m, tca_utc_iso)
  * @param {string} primaryName
- * @param {object|null} maneuverResult result of /api/physics/maneuver, if any
+ * @param {object|object[]|null} maneuverResults result(s) of /api/physics/maneuver
  * @returns {object}
  */
-export function buildAdviceRequest(event, primaryName, maneuverResult = null) {
+export function buildAdviceRequest(event, primaryName, maneuverResults = null) {
+  const results = Array.isArray(maneuverResults)
+    ? maneuverResults
+    : maneuverResults
+      ? [maneuverResults]
+      : []
   return {
     conjunction: screeningEventToConjunctionContext(event, primaryName),
-    maneuvers: maneuverResult ? [maneuverResultToManeuverOption(maneuverResult)] : [],
+    maneuvers: results.filter(Boolean).map(maneuverResultToManeuverOption),
     query_type: 'recommendation',
   }
 }

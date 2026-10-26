@@ -184,7 +184,11 @@ function Console({ view, onChangeView }) {
   // The avoidance burn for whatever is selected. Runs only when asked; see
   // useManeuver for why a console must not quietly plan one per click.
   const maneuver = useManeuver(selectedEvent, tleFor)
-  const ai = useAiAdvice(selectedEvent, selectedEvent?.primary_name ?? 'Primary', maneuver.result)
+  const ai = useAiAdvice(
+    selectedEvent,
+    selectedEvent?.primary_name ?? 'Primary',
+    maneuver.burnsForAdvice,
+  )
 
   // Only a live event has two real markers on this globe to connect — the
   // injected 2004 Envisat replay does not (see hasGlobePresence()).

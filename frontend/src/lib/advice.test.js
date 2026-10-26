@@ -33,6 +33,21 @@ describe('buildAdviceRequest', () => {
     expect(req.maneuvers[0].post_burn_pc).toBe(1e-6)
     expect(req.maneuvers[0].recommended).toBe(true)
   })
+
+  it('passes every compared burn, in order, with its own figures', () => {
+    const burn = (dv, pc) => ({
+      delta_v_cm_s: dv,
+      lead_time_minutes: 50,
+      post_burn_miss_distance_m: 500,
+      post_burn_pc: pc,
+      risk_reduction_pct: 90,
+      fuel_consumed_kg: 0.1,
+      maneuver_recommended: true,
+    })
+    const req = buildAdviceRequest(EVENT, 'ENVISAT', [burn(-2, 3e-4), null, burn(-8, 1e-6)])
+    expect(req.maneuvers.map((m) => m.delta_v_cm_s)).toEqual([-2, -8])
+    expect(req.maneuvers.map((m) => m.post_burn_pc)).toEqual([3e-4, 1e-6])
+  })
 })
 
 describe('adviceRefusal', () => {

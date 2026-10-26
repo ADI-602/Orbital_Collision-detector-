@@ -37,7 +37,19 @@ import './ManeuverPanel.css'
  * @param {object} props.maneuver        useManeuver() state
  */
 function ManeuverPanel({ event, maneuver }) {
-  const { status, result, error, deltaVCmS, refusal, canSimulate, simulate } = maneuver
+  const {
+    status,
+    result,
+    error,
+    deltaVCmS,
+    refusal,
+    canSimulate,
+    simulate,
+    comparison,
+    compareAll,
+    showComparedBurn,
+  } = maneuver
+  const comparing = comparison?.status === 'running'
 
   if (!event) {
     return (
@@ -70,7 +82,7 @@ function ManeuverPanel({ event, maneuver }) {
               type="button"
               className={`maneuver__preset${dv === deltaVCmS ? ' is-active' : ''}`}
               onClick={() => simulate(dv)}
-              disabled={!canSimulate || status === 'running'}
+              disabled={!canSimulate || status === 'running' || comparing}
               // -4.0 cm/s is not an arbitrary default; it is what was flown.
               title={dv === -4 ? 'The burn ESA flew on 22 October 2004' : undefined}
             >
@@ -81,7 +93,26 @@ function ManeuverPanel({ event, maneuver }) {
         <span className="maneuver__lead">
           {LEAD_TIME_MINUTES} min before TCA
         </span>
+        <button
+          type="button"
+          className="maneuver__compare"
+          onClick={compareAll}
+          disabled={!canSimulate || status === 'running' || comparing}
+          title="Simulate all three burns through the physics endpoint and compare them"
+        >
+          Compare all three
+        </button>
       </div>
+
+      {comparing && <LoadingState label="SIMULATING THREE BURNS" />}
+
+      {comparison?.status === 'ready' && (
+        <BurnComparison
+          rows={comparison.rows}
+          selectedDeltaV={status === 'ready' ? deltaVCmS : null}
+          onShow={showComparedBurn}
+        />
+      )}
 
       {!canSimulate && (
         <p className="maneuver__note">
@@ -108,7 +139,11 @@ function ManeuverPanel({ event, maneuver }) {
         />
       )}
 
-      {status === 'ready' && result && <ManeuverResult result={result} />}
+      {status === 'ready' && result && (
+        // With a comparison on screen its table already carries these
+        // figures, so only the drawing for the selected burn is added.
+        <ManeuverResult result={result} figures={comparison?.status !== 'ready'} />
+      )}
     </div>
   )
 }
@@ -117,7 +152,72 @@ function ManeuverPanel({ event, maneuver }) {
  * The outcome: what the burn costs, what it buys, and the encounter drawn to
  * scale.
  */
-function ManeuverResult({ result }) {
+/**
+ * Every preset burn side by side, each row straight from its own
+ * /api/physics/maneuver response. Clicking a row draws that burn's encounter.
+ */
+function BurnComparison({ rows, selectedDeltaV, onShow }) {
+  const baseline = rows.find((row) => row.result)?.result
+  return (
+    <div className="maneuver__compare-table">
+      {baseline && (
+        <p className="maneuver__baseline">
+          Without a burn:{' '}
+          <span className="ui-readout">
+            {formatEncounterDistance(baseline.pre_burn_miss_distance_m)} ·{' '}
+            {formatPc(baseline.pre_burn_pc)}
+          </span>
+        </p>
+      )}
+      {/* Units live in the header so every cell fits on one line. */}
+      <div className="maneuver__compare-head" aria-hidden="true">
+        <span>ΔV cm/s</span>
+        <span>Miss</span>
+        <span>Pc</span>
+        <span>Risk ↓</span>
+        <span>Fuel kg</span>
+      </div>
+      {rows.map((row) =>
+        row.result ? (
+          <button
+            key={row.deltaV}
+            type="button"
+            className={`maneuver__compare-row${row.deltaV === selectedDeltaV ? ' is-selected' : ''}`}
+            aria-pressed={row.deltaV === selectedDeltaV}
+            onClick={() => onShow(row.deltaV)}
+            title="Draw this burn's encounter"
+            aria-label={`${formatDeltaV(row.deltaV)} burn`}
+          >
+            <span className="ui-readout">{row.deltaV.toFixed(1)}</span>
+            <span className="ui-readout">
+              {formatEncounterDistance(row.result.post_burn_miss_distance_m)}
+            </span>
+            <span className="ui-readout">{formatPc(row.result.post_burn_pc)}</span>
+            <span className="ui-readout">
+              {Number.isFinite(row.result.risk_reduction_pct)
+                ? `${row.result.risk_reduction_pct.toFixed(1)}%`
+                : '—'}
+            </span>
+            <span className="ui-readout">
+              {Number.isFinite(row.result.fuel_consumed_kg)
+                ? row.result.fuel_consumed_kg.toFixed(3)
+                : '—'}
+            </span>
+          </button>
+        ) : (
+          <div key={row.deltaV} className="maneuver__compare-row is-failed">
+            <span className="ui-readout">{formatDeltaV(row.deltaV)}</span>
+            <span className="maneuver__compare-error">
+              Failed: {row.error?.detail ?? row.error?.message ?? 'unknown error'}
+            </span>
+          </div>
+        ),
+      )}
+    </div>
+  )
+}
+
+function ManeuverResult({ result, figures = true }) {
   const tracks = result.tracks
   const layout = hasEncounterGeometry(tracks)
     ? projectEncounter(
@@ -130,42 +230,44 @@ function ManeuverResult({ result }) {
   return (
     <div className="maneuver__result">
       {/* Figures first: they are the result. The diagram shows them. */}
-      <dl className="maneuver__rows">
-        <div className="maneuver__row">
-          <dt className="maneuver__key"><Term id="missDistance">Miss distance</Term></dt>
-          <dd className="maneuver__val ui-readout">
-            {formatEncounterDistance(result.pre_burn_miss_distance_m)}
-            <span className="maneuver__arrow" aria-hidden="true"> → </span>
-            <span className="maneuver__val-after">
-              {formatEncounterDistance(result.post_burn_miss_distance_m)}
-            </span>
-          </dd>
-        </div>
-        <div className="maneuver__row">
-          <dt className="maneuver__key"><Term id="pc">Collision probability</Term></dt>
-          <dd className="maneuver__val ui-readout">
-            {formatPc(result.pre_burn_pc)}
-            <span className="maneuver__arrow" aria-hidden="true"> → </span>
-            <span className="maneuver__val-after">{formatPc(result.post_burn_pc)}</span>
-          </dd>
-        </div>
-        <div className="maneuver__row">
-          <dt className="maneuver__key">Risk reduction</dt>
-          <dd className="maneuver__val ui-readout">
-            {Number.isFinite(result.risk_reduction_pct)
-              ? `${result.risk_reduction_pct.toFixed(1)}%`
-              : '—'}
-          </dd>
-        </div>
-        <div className="maneuver__row">
-          <dt className="maneuver__key">Propellant</dt>
-          <dd className="maneuver__val ui-readout">
-            {Number.isFinite(result.fuel_consumed_kg)
-              ? `${result.fuel_consumed_kg.toFixed(3)} kg`
-              : '—'}
-          </dd>
-        </div>
-      </dl>
+      {figures && (
+        <dl className="maneuver__rows">
+          <div className="maneuver__row">
+            <dt className="maneuver__key"><Term id="missDistance">Miss distance</Term></dt>
+            <dd className="maneuver__val ui-readout">
+              {formatEncounterDistance(result.pre_burn_miss_distance_m)}
+              <span className="maneuver__arrow" aria-hidden="true"> → </span>
+              <span className="maneuver__val-after">
+                {formatEncounterDistance(result.post_burn_miss_distance_m)}
+              </span>
+            </dd>
+          </div>
+          <div className="maneuver__row">
+            <dt className="maneuver__key"><Term id="pc">Collision probability</Term></dt>
+            <dd className="maneuver__val ui-readout">
+              {formatPc(result.pre_burn_pc)}
+              <span className="maneuver__arrow" aria-hidden="true"> → </span>
+              <span className="maneuver__val-after">{formatPc(result.post_burn_pc)}</span>
+            </dd>
+          </div>
+          <div className="maneuver__row">
+            <dt className="maneuver__key">Risk reduction</dt>
+            <dd className="maneuver__val ui-readout">
+              {Number.isFinite(result.risk_reduction_pct)
+                ? `${result.risk_reduction_pct.toFixed(1)}%`
+                : '—'}
+            </dd>
+          </div>
+          <div className="maneuver__row">
+            <dt className="maneuver__key">Propellant</dt>
+            <dd className="maneuver__val ui-readout">
+              {Number.isFinite(result.fuel_consumed_kg)
+                ? `${result.fuel_consumed_kg.toFixed(3)} kg`
+                : '—'}
+            </dd>
+          </div>
+        </dl>
+      )}
 
       {layout ? (
         <EncounterDiagram

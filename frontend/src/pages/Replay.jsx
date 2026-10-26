@@ -79,7 +79,7 @@ function Replay({ view, onChangeView }) {
   const ai = useAiAdvice(
     headline,
     headline?.primary_name ?? pair?.primaryName ?? 'ENVISAT',
-    maneuver.result,
+    maneuver.burnsForAdvice,
   )
 
   // Once a burn has been simulated, ask the advisor about it straight away.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { CanceledError } from '../api/client.js'
 import { simulateManeuver } from '../api/physics.js'
@@ -98,6 +98,10 @@ export function elementSetsFor(event, tleFor) {
  *   refusal: string | null,
  *   canSimulate: boolean,
  *   simulate: (deltaVCmS?: number) => void,
+ *   comparison: {status: 'running' | 'ready', rows: Array<{deltaV: number, result: object|null, error: Error|null}>} | null,
+ *   compareAll: () => void,
+ *   showComparedBurn: (deltaVCmS: number) => void,
+ *   burnsForAdvice: object | object[] | null,
  *   reset: () => void
  * }}
  */
@@ -106,17 +110,24 @@ export function useManeuver(event, tleFor) {
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [deltaVCmS, setDeltaVCmS] = useState(-4.0)
+  const [comparison, setComparison] = useState(null)
 
   const controllerRef = useRef(null)
+  const compareControllerRef = useRef(null)
+  const deltaVRef = useRef(deltaVCmS)
+  deltaVRef.current = deltaVCmS
   const tleForRef = useRef(tleFor)
   tleForRef.current = tleFor
 
   const reset = useCallback(() => {
     controllerRef.current?.abort()
     controllerRef.current = null
+    compareControllerRef.current?.abort()
+    compareControllerRef.current = null
     setStatus('idle')
     setResult(null)
     setError(null)
+    setComparison(null)
   }, [])
 
   // A burn belongs to one conjunction. When the selection moves, the old
@@ -127,7 +138,13 @@ export function useManeuver(event, tleFor) {
     setDeltaVCmS(-4.0)
   }, [eventIdentity, reset])
 
-  useEffect(() => () => controllerRef.current?.abort(), [])
+  useEffect(
+    () => () => {
+      controllerRef.current?.abort()
+      compareControllerRef.current?.abort()
+    },
+    [],
+  )
 
   const refusal = maneuverRefusal(event)
   const elementSets = event && !refusal ? elementSetsFor(event, tleFor) : null
@@ -180,5 +197,105 @@ export function useManeuver(event, tleFor) {
       })
   }, [event, deltaVCmS])
 
-  return { status, result, error, deltaVCmS, refusal, canSimulate, simulate, reset }
+  /**
+   * Simulate every preset burn against this conjunction, side by side.
+   *
+   * Three independent requests to the same endpoint, same lead time, same
+   * mass, so the rows are like-for-like and differ only in ΔV. One failing
+   * does not hide the others: each row carries its own result or error.
+   * When they land, the drawn encounter switches to the chosen burn's row from
+   * this same set, so the table and the diagram can never disagree.
+   */
+  const compareAll = useCallback(() => {
+    const target = event
+    if (!target) return
+    const sets = elementSetsFor(target, tleForRef.current)
+    if (!sets) {
+      setStatus('error')
+      setError(new Error(
+        'The element sets for this pair are not available to the console, so the ' +
+        'burns cannot be simulated against the same inputs the screening used.',
+      ))
+      return
+    }
+
+    compareControllerRef.current?.abort()
+    const controller = new AbortController()
+    compareControllerRef.current = controller
+    setComparison({ status: 'running', rows: [] })
+
+    Promise.allSettled(
+      DELTA_V_PRESETS_CM_S.map((deltaV) =>
+        simulateManeuver(
+          {
+            primary: sets.primary,
+            secondary: sets.secondary,
+            tca_utc_iso: target.tca_utc_iso,
+            delta_v_cm_s: deltaV,
+            lead_time_minutes: LEAD_TIME_MINUTES,
+            sat_mass_kg: SAT_MASS_KG,
+          },
+          { signal: controller.signal },
+        ),
+      ),
+    ).then((settled) => {
+      if (controller.signal.aborted) return
+      const rows = settled.map((outcome, i) => ({
+        deltaV: DELTA_V_PRESETS_CM_S[i],
+        result: outcome.status === 'fulfilled' ? outcome.value : null,
+        error: outcome.status === 'rejected' ? outcome.reason : null,
+      }))
+      setComparison({ status: 'ready', rows })
+
+      const chosen =
+        rows.find((row) => row.deltaV === deltaVRef.current && row.result) ??
+        rows.find((row) => row.result)
+      if (chosen) {
+        controllerRef.current?.abort()
+        controllerRef.current = null
+        setDeltaVCmS(chosen.deltaV)
+        setResult(chosen.result)
+        setError(null)
+        setStatus('ready')
+      }
+    })
+  }, [event])
+
+  /** Draw one compared burn, from the comparison's own result — no new request. */
+  const showComparedBurn = useCallback(
+    (deltaV) => {
+      const row = comparison?.rows.find((r) => r.deltaV === deltaV && r.result)
+      if (!row) return
+      controllerRef.current?.abort()
+      controllerRef.current = null
+      setDeltaVCmS(deltaV)
+      setResult(row.result)
+      setError(null)
+      setStatus('ready')
+    },
+    [comparison],
+  )
+
+  // What the AI advisor is handed: every compared burn when there is a
+  // comparison, otherwise the one simulated burn (or nothing).
+  const burnsForAdvice = useMemo(() => {
+    const compared =
+      comparison?.status === 'ready' ? comparison.rows.map((r) => r.result).filter(Boolean) : []
+    return compared.length ? compared : result
+  }, [comparison, result])
+
+  return {
+    status,
+    result,
+    error,
+    deltaVCmS,
+    refusal,
+    canSimulate,
+    simulate,
+    comparison,
+    compareAll,
+    showComparedBurn,
+    burnsForAdvice,
+    reset,
+  }
 }

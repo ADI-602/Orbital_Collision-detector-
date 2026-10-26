@@ -79,6 +79,93 @@
   color: var(--text-faint);
 }
 
+.maneuver__compare {
+  padding: 4px var(--space-3);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--accent-soft);
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+/* --- burn comparison ----------------------------------------------------- */
+
+.maneuver__compare-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.maneuver__baseline {
+  margin: 0 0 var(--space-1);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+.maneuver__compare-head,
+.maneuver__compare-row {
+  display: grid;
+  grid-template-columns: 0.8fr 1fr 1.15fr 0.95fr 0.9fr;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px var(--space-2);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.maneuver__compare-head {
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+.maneuver__compare-row {
+  border: 1px solid transparent;
+  border-radius: var(--radius-inner);
+  background: var(--card-fill);
+  font-size: var(--fs-micro);
+  color: var(--text-secondary);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--card-border-hover);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.maneuver__compare-row.is-selected {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.maneuver__compare-row.is-failed {
+  cursor: default;
+}
+
+.maneuver__compare-error {
+  grid-column: 2 / -1;
+  text-align: left;
+  color: var(--risk-watch);
+}
+
 /* --- notes --------------------------------------------------------------- */
 
 .maneuver__note {
@@ -131,6 +218,13 @@
   aspect-ratio: 1 / 1;
   align-self: center;
   overflow: visible;
+}
+
+/* With the comparison table on screen the figures are already there, so the
+   drawing steps down to keep the whole panel in view. Still to scale: the
+   viewBox is in metres, so only the rendered size changes. */
+.maneuver__compare-table ~ .maneuver__result .maneuver__svg {
+  max-width: 140px;
 }
 
 .maneuver__miss {
