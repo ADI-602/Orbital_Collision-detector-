@@ -12,7 +12,8 @@ Contents:
                            ordered by where a bug is most likely rather than by
                            feature. Says explicitly what was verified and what
                            was not.
-- `demo_checklist.md`    — whole-demo run-through steps (Phase 6, not written yet)
+- `demo_checklist.md`    — whole-demo pre-flight, stage order, failure table
+                           and the numbers as measured (written 2026-10-26)
 - `recorded_fallback.mp4` — re-record if any pipeline change affects demo
                            numbers (Phase 6, not recorded yet)
 

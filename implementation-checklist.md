@@ -125,8 +125,15 @@ How to use this file: check items off as they're genuinely done (validated, not 
       Chrome:** counts down at ×60 (`T-00:53:53` → `T-00:51:52` over 2 s),
       freezes with the globe on pause, and returns to the window start on
       restart.
-- [ ] Envisat replay wired end-to-end (globe + countdown + Pc trend + AI recommendation, all live from real pipeline output)
-      — **AI step wired (2026-10-05), pending a visual check.** `AdvisorPanel` on the
+- [x] Envisat replay wired end-to-end (globe + countdown + Pc trend + AI recommendation, all live from real pipeline output)
+      — **Visually verified 2026-10-26** in the browser at 1536×960: the four
+      prediction days reproduce 329 / 234 / 152 / 269 m and Pc 2.74e-4 /
+      1.11e-3 / 1.93e-3 / 6.59e-4; the −4.0 cm/s burn re-flies to 570 m and
+      Pc 5.69e-5; the advisor panel renders a live Gemini answer
+      (**AI: LIVE**) that quotes those figures unchanged. The flow still
+      needs clicks (burn, ask) by design — see `demo/demo_checklist.md` §3.
+      Earlier status follows —
+      **AI step wired (2026-10-05), pending a visual check.** `AdvisorPanel` on the
       replay and the live console, via `useAiAdvice`, asked on demand with the
       simulated burn attached. Verified: `/api/ai/advise` returns a live
       Gemini answer (`is_fallback: false`) with the key supplied only by `.env`;
@@ -173,10 +180,13 @@ How to use this file: check items off as they're genuinely done (validated, not 
 
 ## Phase 6 — Polish + demo prep
 
-- [ ] Visual polish pass on dashboard/globe
+- [x] Visual polish pass on dashboard/globe — 2026-10-26, measured at the
+      presenting laptop's 1536×960 full screen: every demo panel fits without
+      rail scrolling, type ≥ 11 px, text contrast ≥ 4.5:1 (commits from
+      `ebc7f64`).
 - [ ] `docs/validation-notes.md` written (how we know our numbers are right — Alfano, frame check, Envisat comparison)
 - [ ] `demo/recorded_fallback.mp4` recorded (re-record if any pipeline change affects demo numbers)
-- [ ] `demo/demo_checklist.md` written (pre-demo run-through steps)
+- [x] `demo/demo_checklist.md` written (pre-demo run-through steps) — 2026-10-26
 - [ ] Full team rehearsal of the live demo + fallback switch
 - [ ] README updated with the physics/AI split stated up front
 

@@ -4,8 +4,8 @@ Section runbook for the **Envisat replay** tab: what to check before going on,
 what to say, what to point at, and what to answer. Roughly 70 seconds of stage
 time.
 
-This covers one section of the demo. The whole-demo pre-flight
-(`demo_checklist.md`) is still to be written — see `demo/README.md`.
+This covers one section of the demo. The whole-demo pre-flight and stage
+order are in [`demo_checklist.md`](demo_checklist.md).
 
 Written 2026-08-31, against build-order step 5. Re-check the numbers in
 [§6](#6-the-numbers-as-verified) after any change to `backend/physics/`.
@@ -26,7 +26,7 @@ survive contact with them. Four mismatches:
 | Risk climbs across the four days | Pc goes 2.74e-4 → 1.11e-3 → 1.93e-3 → **6.59e-4**. Up, up, then down. Miss distance likewise: 329 → 234 → 152 → **269 m**. |
 | Risk crosses the danger threshold | It is already **2.7× over** ESA's 1e-4 acceptance level on day one. The paper says so directly: *"all of them exceeding the accepted level of Pc_acc ≤ 10⁻⁴."* |
 | A countdown over four days | The built view counts **60 minutes** to TCA. The four days are a table, not a countdown. |
-| AI explanation + recommendation appears | Not built. That is build-order step 6; the panel is a labelled pending region. |
+| AI explanation + recommendation appears | Built since (2026-10-05) and checked in a browser 2026-10-26: the advisor panel answers with **AI: LIVE**, and is asked automatically after a burn is simulated. It explains the pipeline's figures; it does not change them. |
 
 `docs/pitch-script.md` is a source document and has deliberately not been
 edited. Treat this section of the runbook as superseding its Part 3 for the
