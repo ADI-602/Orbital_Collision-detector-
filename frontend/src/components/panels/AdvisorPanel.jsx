@@ -12,6 +12,11 @@ const SECTIONS = [
   ['tradeoff_analysis', 'Trade-offs'],
 ]
 
+/** "11:24", UTC, for the cached-answer chip. */
+function formatUtcTime(ms) {
+  return new Date(ms).toISOString().slice(11, 16)
+}
+
 /**
  * Whole seconds since `active` last became true; 0 while inactive.
  *
@@ -46,7 +51,7 @@ function useElapsedSeconds(active) {
  * @param {ReturnType<import('../../hooks/useAiAdvice.js').useAiAdvice>} props.ai
  */
 function AdvisorPanel({ event, ai }) {
-  const { status, advice, error, refusal, canAsk, ask } = ai
+  const { status, advice, error, cachedAt, refusal, canAsk, ask } = ai
   const elapsed = useElapsedSeconds(status === 'running')
 
   if (!event) {
@@ -77,7 +82,9 @@ function AdvisorPanel({ event, ai }) {
         <button
           type="button"
           className="advisor__ask"
-          onClick={ask}
+          // "Ask again" always goes to the model; the first ask may reuse a
+          // live answer to the very same figures from earlier this session.
+          onClick={() => ask({ fresh: Boolean(advice) })}
           disabled={!canAsk || status === 'running'}
         >
           {advice ? 'Ask again' : 'Explain this event'}
@@ -88,6 +95,14 @@ function AdvisorPanel({ event, ai }) {
             title={provenance.note}
           >
             {provenance.label}
+          </span>
+        )}
+        {status === 'ready' && cachedAt && (
+          <span
+            className="advisor__chip advisor__chip--cached"
+            title="The same figures were explained earlier this session, so that answer is shown instantly. Ask again for a new one."
+          >
+            Cached · {formatUtcTime(cachedAt)} UTC
           </span>
         )}
       </div>
@@ -107,7 +122,7 @@ function AdvisorPanel({ event, ai }) {
           title="The advisor request failed"
           detail={error?.detail ?? error?.message ?? 'unknown error'}
           hint="The physics figures are unaffected. Nothing was substituted."
-          onRetry={ask}
+          onRetry={() => ask({ fresh: true })}
         />
       )}
 

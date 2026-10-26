@@ -67,6 +67,7 @@
 }
 
 .advisor__chip.is-live { color: var(--text-primary); }
+.advisor__chip--cached { color: var(--text-dim); border-style: dashed; }
 .advisor__chip.is-offline { color: var(--text-secondary); }
 
 .advisor__body {

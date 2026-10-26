@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getAiAdvice } from '../api/ai.js'
 import { CanceledError } from '../api/client.js'
 import { adviceRefusal, buildAdviceRequest } from '../lib/advice.js'
+import { adviceCacheKey, sessionAdviceCache } from '../lib/adviceCache.js'
 
 /**
  * useAiAdvice — ask the AI layer to explain ONE already-computed conjunction.
@@ -14,6 +15,11 @@ import { adviceRefusal, buildAdviceRequest } from '../lib/advice.js'
  * the model has a quota. The answer is discarded when the selected event
  * changes, so advice can never sit under a different conjunction's name.
  *
+ * A live answer is remembered for the session (lib/adviceCache.js), keyed by
+ * the exact request, so asking again about the same figures is instant and
+ * costs no quota. `cachedAt` says when that answer was generated; asking with
+ * `{ fresh: true }` always goes to the model.
+ *
  * @param {object|null} event selected screening event
  * @param {string} primaryName
  * @param {object|null} maneuverResult simulated burn for this event, if any
@@ -22,6 +28,7 @@ export function useAiAdvice(event, primaryName, maneuverResult = null) {
   const [status, setStatus] = useState('idle')
   const [advice, setAdvice] = useState(null)
   const [error, setError] = useState(null)
+  const [cachedAt, setCachedAt] = useState(null)
   const controllerRef = useRef(null)
 
   const reset = useCallback(() => {
@@ -30,6 +37,7 @@ export function useAiAdvice(event, primaryName, maneuverResult = null) {
     setStatus('idle')
     setAdvice(null)
     setError(null)
+    setCachedAt(null)
   }, [])
 
   const identity = event
@@ -42,20 +50,32 @@ export function useAiAdvice(event, primaryName, maneuverResult = null) {
 
   const refusal = adviceRefusal(event)
 
-  const ask = useCallback(() => {
+  const ask = useCallback(({ fresh = false } = {}) => {
     if (!event || adviceRefusal(event)) return
+    const request = buildAdviceRequest(event, primaryName, maneuverResult)
+    const key = adviceCacheKey(request)
     controllerRef.current?.abort()
+
+    const hit = fresh ? undefined : sessionAdviceCache.get(key)
+    if (hit) {
+      controllerRef.current = null
+      setAdvice(hit.payload)
+      setCachedAt(hit.atMs)
+      setError(null)
+      setStatus('ready')
+      return
+    }
+
     const controller = new AbortController()
     controllerRef.current = controller
     setStatus('running')
     setError(null)
-
-    getAiAdvice(buildAdviceRequest(event, primaryName, maneuverResult), {
-      signal: controller.signal,
-    })
+    getAiAdvice(request, { signal: controller.signal })
       .then((payload) => {
         if (controller.signal.aborted) return
+        sessionAdviceCache.set(key, payload)
         setAdvice(payload)
+        setCachedAt(null)
         setStatus('ready')
       })
       .catch((err) => {
@@ -65,5 +85,5 @@ export function useAiAdvice(event, primaryName, maneuverResult = null) {
       })
   }, [event, primaryName, maneuverResult])
 
-  return { status, advice, error, refusal, canAsk: Boolean(event) && !refusal, ask, reset }
+  return { status, advice, error, cachedAt, refusal, canAsk: Boolean(event) && !refusal, ask, reset }
 }
