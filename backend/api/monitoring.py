@@ -248,11 +248,19 @@ class ScreeningMonitor:
         started = time.time()
         snapshot = self._tracked.load()
 
+        # While this pass runs, the events served are still the last completed
+        # pass's, so its timing goes with them. Dropping finished_at here made
+        # a running pass look like "nothing has ever completed".
+        previous = self._run
         self._run = ScreeningRun(
             state="running",
             started_at=started,
-            events=self._run.events,
-            stats=self._run.stats,
+            finished_at=previous.finished_at,
+            duration_s=previous.duration_s,
+            window_start_utc_iso=previous.window_start_utc_iso,
+            window_hours=previous.window_hours,
+            events=previous.events,
+            stats=previous.stats,
             objects_tracked=snapshot.count,
         )
 
