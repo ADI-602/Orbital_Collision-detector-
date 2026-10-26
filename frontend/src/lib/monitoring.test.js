@@ -3,11 +3,64 @@ import { describe, expect, it } from 'vitest'
 import {
   PASS_STATE,
   describeCoverage,
+  describeSchedule,
+  formatClockDuration,
+  scheduleFromStatus,
   formatCount,
   formatPassAge,
   formatWindow,
   summariseEvents,
 } from './monitoring.js'
+
+describe('formatClockDuration', () => {
+  it('reads like a clock', () => {
+    expect(formatClockDuration(42_000)).toBe('0:42')
+    expect(formatClockDuration(12 * 60_000 + 5_000)).toBe('12:05')
+    expect(formatClockDuration(3_600_000 + 2 * 60_000 + 9_000)).toBe('1:02:09')
+  })
+
+  it('refuses nonsense rather than printing it', () => {
+    expect(formatClockDuration(NaN)).toBe('—')
+    expect(formatClockDuration(-1)).toBe('—')
+  })
+})
+
+describe('describeSchedule', () => {
+  const NOW = 1_800_000_000_000
+  const status = (over) =>
+    scheduleFromStatus({
+      state: 'ready',
+      started_at_unix: (NOW - 600_000) / 1000,
+      finished_at_unix: (NOW - 120_000) / 1000,
+      duration_s: 480,
+      interval_s: 900,
+      ...over,
+    })
+
+  it('counts down to the next pass: last finish plus the interval', () => {
+    // Finished 2 min ago, every 15 min: due in 13 min.
+    expect(describeSchedule(status(), NOW)).toEqual({ text: 'Next pass in 13:00', running: false })
+  })
+
+  it('says a pass is due rather than counting below zero', () => {
+    const late = status({ finished_at_unix: (NOW - 1_000_000) / 1000 })
+    expect(describeSchedule(late, NOW).text).toBe('Next pass due now')
+  })
+
+  it('reports a running pass by elapsed time and the last duration, never a percentage', () => {
+    const running = status({ state: 'running', started_at_unix: (NOW - 185_000) / 1000 })
+    const d = describeSchedule(running, NOW)
+    expect(d).toEqual({ text: 'Pass running 3:05 · last took 8:00', running: true })
+    expect(d.text).not.toMatch(/%/)
+  })
+
+  it('handles the first pass, and says nothing it cannot back', () => {
+    expect(describeSchedule(status({ state: 'never_run' }), NOW).text).toBe('First pass starting')
+    expect(describeSchedule(status({ interval_s: null }), NOW)).toBeNull()
+    expect(describeSchedule(null, NOW)).toBeNull()
+    expect(scheduleFromStatus({})).toBeNull()
+  })
+})
 
 /**
  * Tests for the scheduled-screening display logic.

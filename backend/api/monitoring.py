@@ -362,8 +362,12 @@ class ScreeningMonitor:
 
     def _run_once(self) -> None:
         started = time.time()
-        snapshot = self._tracked.load()
 
+        # Running from the moment the pass begins, BEFORE the tracked set is
+        # loaded: that load can be a slow network fetch (always, right after a
+        # restart), and reporting "idle" through it made the schedule promise a
+        # next pass minutes away while one was already under way.
+        #
         # While this pass runs, the events served are still the last completed
         # pass's, so its timing goes with them. Dropping finished_at here made
         # a running pass look like "nothing has ever completed".
@@ -377,9 +381,12 @@ class ScreeningMonitor:
             window_hours=previous.window_hours,
             events=previous.events,
             stats=previous.stats,
-            objects_tracked=snapshot.count,
+            objects_tracked=previous.objects_tracked,
             restored=previous.restored,
         )
+
+        snapshot = self._tracked.load()
+        self._run = replace(self._run, objects_tracked=snapshot.count)
 
         if snapshot.count < 2:
             self._run = ScreeningRun(

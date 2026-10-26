@@ -145,6 +145,73 @@ export function formatCount(n) {
 }
 
 /**
+ * The schedule fields of GET /api/monitoring/status, in milliseconds.
+ *
+ * @param {object|null|undefined} status
+ * @returns {{state: string, startedAtMs: number|null, finishedAtMs: number|null,
+ *            durationMs: number|null, intervalMs: number|null}|null}
+ */
+export function scheduleFromStatus(status) {
+  if (!status || typeof status.state !== 'string') return null
+  const ms = (seconds) =>
+    typeof seconds === 'number' && Number.isFinite(seconds) ? seconds * 1000 : null
+  return {
+    state: status.state,
+    startedAtMs: ms(status.started_at_unix),
+    finishedAtMs: ms(status.finished_at_unix),
+    durationMs: ms(status.duration_s),
+    intervalMs: ms(status.interval_s),
+  }
+}
+
+/** "0:42", "12:05", "1:02:09" — a clock-style duration. */
+export function formatClockDuration(ms) {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return '—'
+  const total = Math.floor(ms / 1000)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const ss = String(s).padStart(2, '0')
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
+}
+
+/**
+ * What the screening schedule is doing, in words, from facts the server
+ * reports — never an estimated percentage. A pass that is running says how
+ * long it has run and how long the last one took; an idle monitor says when
+ * the next scheduled pass is due (the last finish plus the interval, which is
+ * exactly how the server waits). Null when there is nothing honest to say.
+ *
+ * @param {ReturnType<typeof scheduleFromStatus>} schedule
+ * @param {number} [nowMs]
+ * @returns {{text: string, running: boolean}|null}
+ */
+export function describeSchedule(schedule, nowMs = Date.now()) {
+  if (!schedule) return null
+  if (schedule.state === PASS_STATE.RUNNING) {
+    const parts = []
+    if (schedule.startedAtMs !== null) {
+      parts.push(`Pass running ${formatClockDuration(nowMs - schedule.startedAtMs)}`)
+    } else {
+      parts.push('Pass running')
+    }
+    if (schedule.durationMs !== null) {
+      parts.push(`last took ${formatClockDuration(schedule.durationMs)}`)
+    }
+    return { text: parts.join(' · '), running: true }
+  }
+  if (schedule.state === PASS_STATE.NEVER_RUN) {
+    return { text: 'First pass starting', running: false }
+  }
+  if (schedule.finishedAtMs === null || schedule.intervalMs === null) return null
+  const dueMs = schedule.finishedAtMs + schedule.intervalMs
+  return {
+    text: dueMs > nowMs ? `Next pass in ${formatClockDuration(dueMs - nowMs)}` : 'Next pass due now',
+    running: false,
+  }
+}
+
+/**
  * One line describing the window the pass covered.
  * @param {object|null|undefined} pass
  * @returns {string|null}

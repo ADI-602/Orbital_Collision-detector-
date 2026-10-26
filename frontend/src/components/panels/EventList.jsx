@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import ErrorState from '../common/ErrorState.jsx'
 import LoadingState from '../common/LoadingState.jsx'
@@ -15,12 +15,35 @@ import {
 import {
   PASS_STATE,
   describeCoverage,
+  describeSchedule,
   formatCount,
   formatPassAge,
   summariseEvents,
 } from '../../lib/monitoring.js'
 import { EVENT_CATEGORIES, countByCategory, filterEvents } from '../../lib/eventFilter.js'
 import './EventList.css'
+
+/**
+ * The screening schedule, re-rendered every second so the countdown moves.
+ * Its own component so the event rows are not re-rendered with it.
+ */
+function PassSchedule({ schedule }) {
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const described = describeSchedule(schedule, nowMs)
+  if (!described) return null
+  return (
+    <span
+      className={`event-list__schedule ui-readout${described.running ? ' is-running' : ''}`}
+      title="The physics pipeline screens every pair in the tracked set on a fixed interval. No AI is involved in running it."
+    >
+      {described.text}
+    </span>
+  )
+}
 
 /** Chip text for each filter category. */
 const CATEGORY_LABEL = {
@@ -64,6 +87,7 @@ const CATEGORY_LABEL = {
  * @param {Error|null} props.validationError
  * @param {boolean} props.triggering         a pass request is in flight
  * @param {boolean} props.watchingPass       a pass is running and being watched
+ * @param {object|null} [props.schedule]      monitor schedule (lib/monitoring.js)
  * @param {string|null} props.selectedKey
  * @param {(key: string|null) => void} props.onSelect
  * @param {() => void} props.onRefresh
@@ -77,6 +101,7 @@ function EventList({
   validationError,
   triggering,
   watchingPass,
+  schedule,
   selectedKey,
   onSelect,
   onRefresh,
@@ -115,7 +140,8 @@ function EventList({
   const coverage = describeCoverage(pass?.stats)
   const neverRun = pass?.state === PASS_STATE.NEVER_RUN
   const passFailed = pass?.state === PASS_STATE.FAILED
-  const running = watchingPass || pass?.state === PASS_STATE.RUNNING
+  const running =
+    watchingPass || pass?.state === PASS_STATE.RUNNING || schedule?.state === PASS_STATE.RUNNING
   const counts = countByCategory(events)
   const visibleEvents = filterEvents(events, hidden)
   const hiddenCount = events.length - visibleEvents.length
@@ -150,7 +176,12 @@ function EventList({
           )}
         </span>
         <span className="event-list__actions">
-          {running && <span className="event-list__running ui-label">PASS RUNNING…</span>}
+          <PassSchedule schedule={schedule} />
+          {/* Between SCREEN NOW and the next status read, the schedule does
+              not know yet; the click does. */}
+          {running && schedule?.state !== PASS_STATE.RUNNING && (
+            <span className="event-list__running ui-label">PASS RUNNING…</span>
+          )}
           <button type="button" className="event-list__rerun" onClick={onRefresh}>
             REFRESH
           </button>

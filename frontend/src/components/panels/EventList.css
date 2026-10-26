@@ -235,6 +235,16 @@
   color: var(--text-primary);
 }
 
+.event-list__schedule {
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.event-list__schedule.is-running {
+  color: var(--accent);
+}
+
 .event-list__restored {
   margin-left: var(--space-2);
   padding: 1px 6px;

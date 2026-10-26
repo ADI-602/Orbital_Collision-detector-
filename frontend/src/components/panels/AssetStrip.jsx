@@ -93,6 +93,7 @@ function AssetStrip({
           validationError={screening.validationError}
           triggering={screening.triggering}
           watchingPass={screening.watchingPass}
+          schedule={screening.schedule}
           selectedKey={selectedEventKey}
           onSelect={onSelectEvent}
           onRefresh={screening.refresh}

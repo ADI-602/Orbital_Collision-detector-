@@ -58,6 +58,26 @@ def test_running_state_keeps_the_last_completed_pass_timing(monkeypatch):
     assert running.events == first.events
 
 
+def test_a_pass_reports_running_while_the_tracked_set_is_still_loading():
+    """The load can be a slow network fetch; it is part of the pass."""
+    states_during_load = []
+
+    class SlowTracked(FakeTracked):
+        def load(self):
+            states_during_load.append(monitor.current.state)
+            return super().load()
+
+    monitor = ScreeningMonitor(SlowTracked(), use_process=False)
+    monitoring_compute = monitoring.compute_pass
+    try:
+        monitoring.compute_pass = lambda *_a: ([], {"pairs_evaluated": 1}, "2026-10-26T00:00:00Z")
+        monitor._run_once()
+    finally:
+        monitoring.compute_pass = monitoring_compute
+    assert states_during_load == ["running"]
+    assert monitor.current.objects_tracked == 2
+
+
 def test_first_pass_reports_no_completion_while_running(monkeypatch):
     monitor = ScreeningMonitor(FakeTracked(), use_process=False)
     seen_while_running = []

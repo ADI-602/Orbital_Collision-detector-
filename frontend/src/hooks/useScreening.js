@@ -9,7 +9,7 @@ import {
   refreshMonitoring,
 } from '../api/tracking.js'
 import { EVENT_ORIGIN, rankEvents } from '../lib/conjunctions.js'
-import { PASS_STATE } from '../lib/monitoring.js'
+import { PASS_STATE, scheduleFromStatus } from '../lib/monitoring.js'
 
 /**
  * useScreening — read the physics pipeline's conjunction results.
@@ -168,6 +168,7 @@ async function runValidationScreening(signal) {
  *   triggering: boolean,
  *   watchingPass: boolean,
  *   loadedAt: Date | null,
+ *   schedule: ReturnType<typeof scheduleFromStatus>,
  *   refresh: () => void,
  *   screenNow: () => void
  * }}
@@ -181,6 +182,8 @@ export function useScreening() {
   const [triggering, setTriggering] = useState(false)
   const [watchingPass, setWatchingPass] = useState(false)
   const [loadedAt, setLoadedAt] = useState(null)
+  // The monitor's schedule as of the latest status read (lib/monitoring.js).
+  const [schedule, setSchedule] = useState(null)
 
   const abortRef = useRef(null)
   const pollRef = useRef(null)
@@ -266,16 +269,21 @@ export function useScreening() {
   const passRef = useRef(pass)
   passRef.current = pass
   useEffect(() => {
-    const timer = setInterval(async () => {
+    const check = async () => {
       try {
         const s = await getMonitoringStatus()
-        if (!mountedRef.current || s.state === PASS_STATE.RUNNING) return
+        if (!mountedRef.current) return
+        setSchedule(scheduleFromStatus(s))
+        if (s.state === PASS_STATE.RUNNING) return
         const shown = passRef.current?.finished_at_unix ?? 0
         if (s.finished_at_unix && s.finished_at_unix > shown) refresh({ silent: true })
       } catch {
         // Next tick will try again.
       }
-    }, SCHEDULED_PASS_POLL_MS)
+    }
+    // Once now for the schedule line, then on the slow cadence.
+    check()
+    const timer = setInterval(check, SCHEDULED_PASS_POLL_MS)
     return () => clearInterval(timer)
   }, [refresh])
 
@@ -301,6 +309,7 @@ export function useScreening() {
         try {
           const status_ = await getMonitoringStatus()
           if (!mountedRef.current) return
+          setSchedule(scheduleFromStatus(status_))
 
           if (status_.state === PASS_STATE.RUNNING) {
             pollRef.current = setTimeout(tick, STATUS_POLL_MS)
@@ -352,6 +361,7 @@ export function useScreening() {
     triggering,
     watchingPass,
     loadedAt,
+    schedule,
     refresh,
     screenNow,
   }
