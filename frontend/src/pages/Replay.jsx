@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { API_BASE_URL } from '../api/client.js'
 import ErrorState from '../components/common/ErrorState.jsx'
 import FloatingPanel from '../components/common/FloatingPanel.jsx'
 import LoadingState from '../components/common/LoadingState.jsx'
+import MoreDetails from '../components/common/MoreDetails.jsx'
 import RiskBadge from '../components/common/RiskBadge.jsx'
 import TMinus from '../components/common/TMinus.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
@@ -78,6 +79,19 @@ function Replay({ view, onChangeView }) {
     maneuver.result,
   )
 
+  // Once a burn has been simulated, ask the advisor about it straight away.
+  // Still the operator's action — it follows their click on a ΔV — but the
+  // ~20 s model latency now runs while the presenter is talking through the
+  // burn instead of after a second click. Once per distinct burn result.
+  const { ask: askAdvisor } = ai
+  const askedForBurnRef = useRef(null)
+  useEffect(() => {
+    const result = maneuver.result
+    if (!result || askedForBurnRef.current === result) return
+    askedForBurnRef.current = result
+    askAdvisor()
+  }, [maneuver.result, askAdvisor])
+
   // The replay clock accumulates only while playing, so pause freezes the
   // globe and the countdown together instead of letting one run on.
   const pausedRef = useRef(false)
@@ -102,6 +116,24 @@ function Replay({ view, onChangeView }) {
   }, [])
 
   const handleTelemetry = useCallback((next) => setTelemetry(next), [])
+  const {
+    propagateAll: propagateReplay,
+    primaryId: replayPrimaryId,
+    objectCount: replayObjectCount,
+  } = replay
+
+  // Point the camera at where the two objects meet. Taken from the same
+  // in-browser propagation that places the markers, at the TCA instant — a
+  // camera position, never a figure.
+  const encounterView = useMemo(() => {
+    // propagateAll is stable and returns nothing until the element sets load,
+    // so the object count is what re-runs this once they have.
+    if (!Number.isFinite(tcaMs) || !replayObjectCount) return null
+    const at = propagateReplay(new Date(tcaMs))
+    const primary = at.find((s) => s.id === replayPrimaryId)
+    if (!primary) return null
+    return { longitude_deg: primary.longitude_deg, latitude_deg: primary.latitude_deg }
+  }, [tcaMs, propagateReplay, replayPrimaryId, replayObjectCount])
 
   const simMs = telemetry.simTime ? telemetry.simTime.getTime() : NaN
   const tca = splitTcaIso(tcaIso)
@@ -137,6 +169,7 @@ function Replay({ view, onChangeView }) {
           simTimeFor={simTimeFor}
           clockKey={tcaMs}
           telemetryIntervalMs={100}
+          initialView={encounterView}
         />
       </div>
 
@@ -224,32 +257,26 @@ function Replay({ view, onChangeView }) {
                   {replay.eventName ?? 'Envisat vs. Zenith-2 Debris (October 2004)'}
                 </span>
                 <p className="replay__case-body">
-                  On 22 October 2004 ESA predicted a close approach between Envisat
-                  and a fragment of a Russian Zenith-2 upper stage (92-093EE), and
-                  flew an avoidance maneuver. The prediction was published, so its
-                  numbers can be checked against ours.
+                  A real 2004 close approach that ESA published, re-run through
+                  the same pipeline as the live console.
                 </p>
-                <p className="replay__case-body">
-                  The archived element sets below go to the same{' '}
-                  <code>/api/physics/screening</code> endpoint the live console
-                  calls. Nothing about this case is special-cased in the pipeline.
-                </p>
-                <dl className="replay__meta">
-                  <div className="replay__meta-row">
-                    <dt className="replay__meta-key">Source</dt>
-                    <dd className="replay__meta-val">{PUBLISHED_SOURCE}</dd>
-                  </div>
-                  <div className="replay__meta-row">
-                    <dt className="replay__meta-key">Search window</dt>
-                    <dd className="replay__meta-val ui-readout">
-                      {REPLAY_SCREEN_WINDOW_HOURS} h from 2004-10-22 00:00Z
-                    </dd>
-                  </div>
-                  <div className="replay__meta-row">
-                    <dt className="replay__meta-key">Propagator</dt>
-                    <dd className="replay__meta-val ui-readout">SGP4</dd>
-                  </div>
-                </dl>
+                <p className="replay__case-source">Source: {PUBLISHED_SOURCE}</p>
+                <MoreDetails summary="About this case">
+                  <p>
+                    On 22 October 2004 ESA predicted a close approach between
+                    Envisat and a fragment of a Russian Zenith-2 upper stage
+                    (92-093EE), and flew an avoidance maneuver.
+                  </p>
+                  <p>
+                    The archived element sets go to the same{' '}
+                    <code>/api/physics/screening</code> endpoint the live console
+                    calls. Nothing about this case is special-cased in the pipeline.
+                  </p>
+                  <p>
+                    Search window: {REPLAY_SCREEN_WINDOW_HOURS} h from 2004-10-22
+                    00:00Z. Propagator: SGP4.
+                  </p>
+                </MoreDetails>
               </div>
             </FloatingPanel>
 
@@ -257,7 +284,7 @@ function Replay({ view, onChangeView }) {
               id="replay.esa"
               title="What ESA did"
               resize={['e', 's']}
-              className="globe-page__float"
+              className="globe-page__float globe-page__float--fill"
             >
               <div className="replay__history">
                 <p className="replay__case-body">
@@ -270,8 +297,8 @@ function Replay({ view, onChangeView }) {
                   approach.
                 </p>
                 <p className="replay__case-note">
-                  The paragraph above is history, quoted from the paper. Everything
-                  below it is this pipeline re-flying that burn.
+                  Above: history, from the paper. Below: this pipeline re-flying
+                  that burn.
                 </p>
                 <ManeuverPanel event={headline} maneuver={maneuver} />
               </div>
@@ -358,9 +385,8 @@ function Replay({ view, onChangeView }) {
                   </dl>
 
                   <p className="replay__source">
-                    SGP4 propagation, refined TCA, 2D encounter-plane Pc — computed
-                    by the physics pipeline. No AI is involved in any number on this
-                    page.
+                    Computed by the physics pipeline: SGP4, refined TCA, 2D
+                    encounter-plane Pc. No AI in any number on this page.
                   </p>
                 </div>
               )}
@@ -370,7 +396,7 @@ function Replay({ view, onChangeView }) {
               id="replay.ai"
               title="AI explanation"
               resize={['w', 's']}
-              className="globe-page__float"
+              className="globe-page__float globe-page__float--fill"
             >
               <AdvisorPanel event={headline} ai={ai} />
             </FloatingPanel>

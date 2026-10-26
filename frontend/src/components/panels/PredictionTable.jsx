@@ -1,4 +1,5 @@
 import ErrorState from '../common/ErrorState.jsx'
+import MoreDetails from '../common/MoreDetails.jsx'
 import RiskBadge from '../common/RiskBadge.jsx'
 import { formatMissDistance, formatPc } from '../../lib/conjunctions.js'
 import {
@@ -55,6 +56,27 @@ function PredictionTable({ days, loading }) {
 
   return (
     <div className="prediction-table">
+      {/* The reference ranges lead: they are what every row is judged
+          against, and below the rows they scrolled out of a laptop-height strip. */}
+      <dl className="prediction-table__bands">
+        <div className="prediction-table__band">
+          <dt className="ui-label">Published</dt>
+          <dd className="ui-readout">
+            {formatBand(PUBLISHED_MISS_DISTANCE_M, (v) => `${v} m`)} ·{' '}
+            {formatBand(PUBLISHED_PC, (v) => v.toExponential(1))}
+          </dd>
+        </div>
+        <div className="prediction-table__band">
+          <dt className="ui-label" title="Values inside this range are underlined in the rows below">
+            Tested range <span className="prediction-table__band-hint">(underlined)</span>
+          </dt>
+          <dd className="ui-readout">
+            {formatBand(ASSERTED_MISS_DISTANCE_M, (v) => `${v} m`)} ·{' '}
+            {formatBand(ASSERTED_PC, (v) => v.toExponential(1))}
+          </dd>
+        </div>
+      </dl>
+
       <div className="prediction-table__grid" role="table" aria-label="Prediction days">
         <div className="prediction-table__head" role="row">
           <span className="ui-label" role="columnheader">Prediction</span>
@@ -122,33 +144,18 @@ function PredictionTable({ days, loading }) {
         })}
       </div>
 
-      <dl className="prediction-table__bands">
-        <div className="prediction-table__band">
-          <dt className="ui-label">Published</dt>
-          <dd className="ui-readout">
-            {formatBand(PUBLISHED_MISS_DISTANCE_M, (v) => `${v} m`)} ·{' '}
-            {formatBand(PUBLISHED_PC, (v) => v.toExponential(1))}
-          </dd>
-        </div>
-        <div className="prediction-table__band">
-          <dt className="ui-label">Asserted by test</dt>
-          <dd className="ui-readout">
-            {formatBand(ASSERTED_MISS_DISTANCE_M, (v) => `${v} m`)} ·{' '}
-            {formatBand(ASSERTED_PC, (v) => v.toExponential(1))}
-          </dd>
-        </div>
-      </dl>
 
-      <p className="prediction-table__note">
-        The paper gives a range across all four predictions, not a value per
-        day, so there is no per-day published figure to compare against.
-        Highlighting above marks the range{' '}
-        <code>tests/test_envisat_replay.py</code> asserts, which is wider than
-        the published one because this pipeline runs on public-catalog TLEs
-        while ESA used Envisat&rsquo;s operational orbit determination
-        (in-track 1&sigma; ~3 m against ~556 m for a TLE). Source:{' '}
-        {PUBLISHED_SOURCE}.
-      </p>
+      <MoreDetails summary="Why two ranges">
+        <p>
+          The paper gives a range across all four predictions, not a value per
+          day, so there is no per-day published figure to compare against.
+          Highlighting marks the range <code>tests/test_envisat_replay.py</code>{' '}
+          asserts, which is wider than the published one because this pipeline
+          runs on public-catalog TLEs while ESA used Envisat&rsquo;s operational
+          orbit determination (in-track 1&sigma; ~3 m against ~556 m for a TLE).
+        </p>
+        <p>Source: {PUBLISHED_SOURCE}.</p>
+      </MoreDetails>
 
       {!loading && computed.length === 0 && (
         <ErrorState

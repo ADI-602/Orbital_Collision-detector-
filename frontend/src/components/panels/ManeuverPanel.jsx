@@ -1,5 +1,6 @@
 import ErrorState from '../common/ErrorState.jsx'
 import LoadingState from '../common/LoadingState.jsx'
+import MoreDetails from '../common/MoreDetails.jsx'
 import { formatPc } from '../../lib/conjunctions.js'
 import {
   formatDeltaV,
@@ -127,20 +128,7 @@ function ManeuverResult({ result }) {
 
   return (
     <div className="maneuver__result">
-      {layout ? (
-        <EncounterDiagram
-          layout={layout}
-          preMissM={result.pre_burn_miss_distance_m}
-          postMissM={result.post_burn_miss_distance_m}
-        />
-      ) : (
-        <p className="maneuver__note">
-          The endpoint returned the burn figures without encounter geometry, so
-          the numbers below stand on their own — nothing is drawn rather than a
-          diagram being guessed at.
-        </p>
-      )}
-
+      {/* Figures first: they are the result. The diagram shows them. */}
       <dl className="maneuver__rows">
         <div className="maneuver__row">
           <dt className="maneuver__key">Miss distance</dt>
@@ -178,17 +166,36 @@ function ManeuverResult({ result }) {
         </div>
       </dl>
 
+      {layout ? (
+        <EncounterDiagram
+          layout={layout}
+          preMissM={result.pre_burn_miss_distance_m}
+          postMissM={result.post_burn_miss_distance_m}
+        />
+      ) : (
+        <p className="maneuver__note">
+          The endpoint returned the burn figures without encounter geometry, so
+          the numbers above stand on their own — nothing is drawn rather than a
+          diagram being guessed at.
+        </p>
+      )}
+
       {tracks?.truncated && tracks?.note && (
         <p className="maneuver__note maneuver__note--warn">{tracks.note}</p>
       )}
 
-      <p className="maneuver__source">
-        Impulsive along-track burn, Clohessy-Wiltshire displacement, Pc
-        recomputed by the same 2D encounter-plane method — all from{' '}
-        <code>/api/physics/maneuver</code>. The diagram is the pipeline&rsquo;s
-        own positions at closest approach, projected into their plane; the
-        distances above are its numbers, not measurements off the picture.
-      </p>
+      <MoreDetails summary="How the burn is modelled">
+        <p>
+          Impulsive along-track burn, Clohessy-Wiltshire displacement, Pc
+          recomputed by the same 2D encounter-plane method — all from{' '}
+          <code>/api/physics/maneuver</code>.
+        </p>
+        <p>
+          The diagram is the pipeline&rsquo;s own positions at closest approach,
+          projected into their plane, so it is to scale. The distances above are
+          its numbers, not measurements off the picture.
+        </p>
+      </MoreDetails>
     </div>
   )
 }

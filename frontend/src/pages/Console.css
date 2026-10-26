@@ -44,10 +44,49 @@
   color: var(--accent);
 }
 
+/* The tracked-object count: one big readout instead of a ring gauge. */
+.console__count {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.console__count-value {
+  font-size: var(--fs-num-lg);
+  line-height: 1.1;
+  color: var(--accent);
+}
+
+.console__count-unit {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.console__count-note {
+  margin: var(--space-1) 0 var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.console__count-note.is-degraded {
+  color: var(--risk-watch);
+}
+
 .console__feed {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+/* Long group lists ellipsise; the full list is in the row's tooltip. */
+.console__feed-val {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .console__feed-row {
@@ -78,5 +117,5 @@
 }
 
 .console__feed-degraded .error-state__detail {
-  font-size: 11px;
+  font-size: var(--fs-label);
 }

@@ -30,9 +30,13 @@
   overflow: hidden;
 }
 
+/* The canvas runs 18vh above the top of the page, which centres the Earth
+   ~9vh higher — in the open space between the header and the bottom strip,
+   instead of behind the strip. Overflow is clipped by .globe-page, and Cesium
+   maps pointer input through the canvas rect, so picking is unaffected. */
 .globe-page__globe {
   position: absolute;
-  inset: 0;
+  inset: -18vh 0 0 0;
 }
 
 .globe-page__overlay {
@@ -102,6 +106,18 @@
   width: var(--rail-w);
 }
 
+/*
+ * The one card per rail that takes whatever height is left and scrolls its own
+ * body (the AI advisor, the maneuver result). Without it every card kept its
+ * natural height and the last one — the one being presented — landed below
+ * the bottom of a laptop screen inside a scrolling rail. A collapsed or
+ * hand-resized card goes back to its own height.
+ */
+.globe-page__rail > .globe-page__float--fill:not(.is-collapsed):not([style*='height']) {
+  flex: 1 1 0;
+  min-height: 200px;
+}
+
 /* Docked bottom-centre between the rails; grows upwards from its north edge. */
 .globe-page__strip {
   position: absolute;
@@ -146,9 +162,9 @@
   gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-pill);
-  background: rgba(8, 10, 14, 0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(9, 11, 15, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 /* Primary target is a 1920x1080 projector. Below that, narrow the rails; on
@@ -173,7 +189,7 @@
 
   .globe-page__header { order: 0; padding: var(--space-3) var(--space-3) 0; }
   .globe-page__banner { order: 1; padding: 0 var(--space-3); }
-  .globe-page__globe { order: 2; position: relative; height: 55vh; }
+  .globe-page__globe { order: 2; position: relative; inset: auto; height: 55vh; }
   .globe-page__center { order: 3; position: static; transform: none; padding: var(--space-3); max-width: none; }
   .globe-page__rail--right { order: 4; }
   .globe-page__rail--left { order: 5; }

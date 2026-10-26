@@ -158,6 +158,14 @@ export function hasGlobePresence(event) {
  * Duplicated as literal hex because Cesium's canvas rendering has no access
  * to CSS custom properties.
  */
+/**
+ * The Pc boundaries the backend assigns threat levels by, mirrored for
+ * DISPLAY ONLY (legend, badge tooltip). The level on every event is still the
+ * backend's own `threat_level`; nothing here re-derives one. Keep in step with
+ * PC_RED / PC_YELLOW in backend/api/assessment.py.
+ */
+export const THREAT_THRESHOLDS = { RED: 1e-4, YELLOW: 1e-5 }
+
 const RISK_LINE_HEX = { RED: '#f43f5e', YELLOW: '#fbbf24', GREEN: '#4ade80' }
 const UNKNOWN_LINE_HEX = '#71717a'
 
@@ -262,6 +270,30 @@ export function eventKey(event) {
   const primary = event?.primary_id ?? event?.primary_name ?? '?'
   const secondary = event?.secondary_id ?? event?.secondary_name ?? '?'
   return `${origin}:${primary}:${secondary}:${event?.tca_utc_iso ?? '?'}`
+}
+
+/**
+ * Which event the console should open on.
+ *
+ * The most serious LIVE detection (RED, then YELLOW, then by Pc) — it is real
+ * and happening now. Failing that, the injected Envisat case, which is always
+ * present and always tagged as a 2004 replay. A GREEN, co-orbital or refused
+ * pair is never auto-selected: opening on one would present a non-event as
+ * the headline.
+ *
+ * Selection only — it changes what is shown first, never a number.
+ *
+ * @param {object[]} events
+ * @returns {object|null}
+ */
+export function pickInitialEvent(events) {
+  const ranked = rankEvents(events)
+  const elevated = (e) => e?.threat_level === 'RED' || e?.threat_level === 'YELLOW'
+  const live = ranked.find(
+    (e) => (e.origin ?? EVENT_ORIGIN.LIVE) === EVENT_ORIGIN.LIVE && !isNotARisk(e) && elevated(e),
+  )
+  if (live) return live
+  return ranked.find((e) => e.origin === EVENT_ORIGIN.VALIDATION && !isNotARisk(e)) ?? null
 }
 
 /**

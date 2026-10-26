@@ -123,7 +123,7 @@
 
 .conj-alert__chip {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.06em;
   padding: 1px 6px;
   border: 1px solid currentColor;

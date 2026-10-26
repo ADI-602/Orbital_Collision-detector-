@@ -20,6 +20,8 @@
 
 .risk-badge__text {
   color: var(--text-secondary);
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .risk-badge--nominal { color: var(--risk-nominal); background: var(--risk-nominal-soft); }

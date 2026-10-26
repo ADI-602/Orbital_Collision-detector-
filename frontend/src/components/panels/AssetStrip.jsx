@@ -31,7 +31,8 @@ function AssetStrip({
   selectedEventKey,
   onSelectEvent,
 }) {
-  const [tab, setTab] = useState('objects')
+  // Events first: the detections are what the console exists to show.
+  const [tab, setTab] = useState('events')
 
   return (
     <div className="asset-strip">

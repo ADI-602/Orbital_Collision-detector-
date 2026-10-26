@@ -53,6 +53,11 @@ import './CesiumGlobe.css'
  * @param {number} [props.telemetryIntervalMs] how often React hears about the
  *   clock. The default is deliberately coarse; the replay lowers it because a
  *   countdown refreshed only four times a second visibly stutters.
+ * @param {{longitude_deg: number, latitude_deg: number} | null} [props.initialView]
+ *   where to point the camera, applied once per distinct location (to ~0.1°)
+ *   so it never fights a viewer who has since dragged the globe. The replay
+ *   uses it to open over the encounter instead of wherever the default view
+ *   happens to be.
  */
 /**
  * Marker colours. Neutral by default so the risk palette keeps its meaning:
@@ -84,9 +89,29 @@ const LABELLED_ONLY = true
  */
 const TRACK_REFRESH_MS = 250
 
+/** Camera altitude for the default and any requested view. */
+const CAMERA_HEIGHT_M = 24_000_000
+
 /** Ring opacity: present enough to read, faint enough not to fight the markers. */
 const TRACK_ALPHA = 0.85
 const TRACK_DEPTH_FAIL_ALPHA = 0.28
+
+/**
+ * Point the camera at a requested location, once per distinct location.
+ *
+ * @param {Cesium.Viewer | null} viewer
+ * @param {{longitude_deg: number, latitude_deg: number} | null} view
+ * @param {{current: string | null}} appliedRef
+ */
+function applyInitialView(viewer, view, appliedRef) {
+  if (!viewer || viewer.isDestroyed() || !view) return
+  const { longitude_deg: lon, latitude_deg: lat } = view
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return
+  const key = `${lon.toFixed(1)},${lat.toFixed(1)}`
+  if (appliedRef.current === key) return
+  appliedRef.current = key
+  viewer.camera.setView({ destination: Cesium.Cartesian3.fromDegrees(lon, lat, CAMERA_HEIGHT_M) })
+}
 
 function CesiumGlobe({
   propagateAll,
@@ -101,6 +126,7 @@ function CesiumGlobe({
   simTimeFor = null,
   clockKey = 'live',
   telemetryIntervalMs = 250,
+  initialView = null,
 }) {
   const containerRef = useRef(null)
   const viewerRef = useRef(null)
@@ -128,6 +154,9 @@ function CesiumGlobe({
   simTimeForRef.current = simTimeFor
   const telemetryIntervalRef = useRef(telemetryIntervalMs)
   telemetryIntervalRef.current = telemetryIntervalMs
+  const initialViewRef = useRef(initialView)
+  initialViewRef.current = initialView
+  const appliedViewRef = useRef(null)
   const linkEntityRef = useRef(null)
   // Read by the polyline's CallbackProperty every frame; see the tick below.
   const linkPositionsRef = useRef([])
@@ -199,8 +228,10 @@ function CesiumGlobe({
       // Close enough that Earth fills most of the stage, far enough that a
       // whole LEO orbit stays in frame as objects sweep around the limb.
       viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(10, 15, 24_000_000),
+        destination: Cesium.Cartesian3.fromDegrees(10, 15, CAMERA_HEIGHT_M),
       })
+      // A requested view that arrived before the viewer existed.
+      applyInitialView(viewer, initialViewRef.current, appliedViewRef)
 
       // Click-to-select. Cesium hands back the picked entity; we translate to
       // our own id so React state never holds a Cesium object.
@@ -239,6 +270,13 @@ function CesiumGlobe({
       if (viewer && !viewer.isDestroyed()) viewer.destroy()
     }
   }, [])
+
+  // A requested view that arrives (or moves) after the viewer exists.
+  const viewLon = initialView?.longitude_deg
+  const viewLat = initialView?.latitude_deg
+  useEffect(() => {
+    applyInitialView(viewerRef.current, initialViewRef.current, appliedViewRef)
+  }, [viewLon, viewLat])
 
   // --- Animation loop: propagate and move markers -------------------------
   useEffect(() => {
@@ -464,7 +502,7 @@ function CesiumGlobe({
             },
             label: {
               text: sat.name,
-              font: '500 11px Inter, system-ui, sans-serif',
+              font: '600 13px Inter, system-ui, sans-serif',
               fillColor: Cesium.Color.fromCssColorString('#e4e4e7'),
               showBackground: true,
               backgroundColor: Cesium.Color.fromCssColorString('rgba(5,5,5,0.65)'),
@@ -522,6 +560,18 @@ function CesiumGlobe({
         // Name only what the viewer is being pointed at.
         const wantLabel = !LABELLED_ONLY || isPairMember || isSelected
         if (entity.label.show !== wantLabel) entity.label.show = wantLabel
+
+        // A conjunction's two objects meet at one point, so labels on the
+        // same side land on top of each other exactly when it matters. The
+        // secondary's label goes on the left of its marker.
+        const labelLeft = Boolean(highlight && sat.id === highlight.secondaryId)
+        if (entity.__labelLeft !== labelLeft) {
+          entity.label.horizontalOrigin = labelLeft
+            ? Cesium.HorizontalOrigin.RIGHT
+            : Cesium.HorizontalOrigin.LEFT
+          entity.label.pixelOffset = new Cesium.Cartesian2(labelLeft ? -12 : 12, 0)
+          entity.__labelLeft = labelLeft
+        }
       }
 
       // The connecting line between a selected conjunction's two objects.

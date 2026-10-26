@@ -10,7 +10,12 @@
 .floating-panel {
   position: relative;
   flex: none;
-  background: rgba(8, 10, 14, 0.5);
+  /* Mostly opaque, lightly blurred. At 50% opacity and a 20px blur, the
+     sunlit limb bled through as a grey smudge behind every panel edge that
+     crossed the globe, and small text over it lost contrast. */
+  background: rgba(9, 11, 15, 0.86);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-color: rgba(255, 255, 255, 0.1);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
   max-width: 100%;

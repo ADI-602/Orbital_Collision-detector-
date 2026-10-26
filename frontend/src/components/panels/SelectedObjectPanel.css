@@ -1,7 +1,7 @@
 .selected-object {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .selected-object__row {
@@ -9,7 +9,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  padding: 6px var(--space-3);
   border-radius: var(--radius-inner);
   background: var(--card-fill);
 }
@@ -38,23 +38,23 @@
 }
 
 .selected-object--empty {
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: var(--space-2);
-  padding: var(--space-5) var(--space-3);
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: 0;
 }
 
+/* Left-aligned and tight: on the console this card sits empty above the
+   selected event, and a centred, padded empty state cost ~190 px of the
+   height the AI advisor needs. */
 .selected-object__empty-title {
   font-family: var(--font-sans);
-  font-size: var(--fs-body);
+  font-size: var(--fs-caption);
   color: var(--text-secondary);
 }
 
 .selected-object__empty-hint {
   font-family: var(--font-sans);
-  font-size: var(--fs-caption);
+  font-size: var(--fs-micro);
   color: var(--text-faint);
-  max-width: 28ch;
   line-height: 1.5;
 }

@@ -1,8 +1,7 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { API_BASE_URL } from '../api/client.js'
 import ErrorState from '../components/common/ErrorState.jsx'
-import GaugeCard from '../components/common/GaugeCard.jsx'
 import FloatingPanel from '../components/common/FloatingPanel.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AssetStrip from '../components/panels/AssetStrip.jsx'
@@ -18,23 +17,12 @@ import { useAiAdvice } from '../hooks/useAiAdvice.js'
 import { useConjunctionAlerts } from '../hooks/useConjunctionAlerts.js'
 import { useManeuver } from '../hooks/useManeuver.js'
 import { useScreening } from '../hooks/useScreening.js'
-import { eventKey, hasGlobePresence, riskColorHex } from '../lib/conjunctions.js'
+import { eventKey, hasGlobePresence, pickInitialEvent, riskColorHex } from '../lib/conjunctions.js'
 import { DEFAULT_SPEED_MULTIPLIER, formatSimClock } from '../lib/simClock.js'
 import '../styles/globePage.css'
 import './Console.css'
 
 const UVICORN_COMMAND = 'backend\\.venv\\Scripts\\uvicorn backend.api.main:app --reload --port 8000'
-
-/**
- * The tracking ring shows COVERAGE, not a count against a ceiling.
- *
- * It used to scale the object count against a fixed max of 12, which was
- * readable for a ~20-object station set and meaningless once the tracked set
- * became several hundred debris fragments: the ring simply pinned full and
- * said nothing. It now reads propagatable objects against objects offered, so
- * a full ring means every element set the server supplied was usable and any
- * shortfall is visible rather than buried in a rejected-list.
- */
 
 /**
  * How each data source is named in the UI. Nothing but a genuine live fetch is
@@ -165,6 +153,19 @@ function Console({ view, onChangeView }) {
   const conjunctionAlerts = useConjunctionAlerts(screening.events, screening.status === 'ready')
   const handleViewAlert = useCallback((event) => setSelectedEventKey(eventKey(event)), [])
 
+  // Open on something worth looking at, once per page load: the most serious
+  // live detection, else the injected Envisat case (lib/conjunctions.js
+  // pickInitialEvent). A selection the operator has already made is never
+  // overridden, and a later pass never yanks the view to a new event.
+  const autoSelectedRef = useRef(false)
+  useEffect(() => {
+    if (autoSelectedRef.current || screening.status !== 'ready') return
+    autoSelectedRef.current = true
+    if (selectedEventKey) return
+    const initial = pickInitialEvent(screening.events)
+    if (initial) setSelectedEventKey(eventKey(initial))
+  }, [screening.status, screening.events, selectedEventKey])
+
   const selected = useMemo(
     () => telemetry.satellites.find((s) => s.id === selectedId) ?? null,
     [telemetry.satellites, selectedId],
@@ -287,38 +288,44 @@ function Console({ view, onChangeView }) {
 
           {/* --- Left rail: what is tracked, and the burn planner -------- */}
           <div className="globe-page__rail globe-page__rail--left">
+            {/* One card for what is tracked and where it came from. The ring
+                gauge this replaces was 280 px of chrome for one number. The
+                count still reads propagatable against offered, so a shortfall
+                is visible rather than buried in a rejected-list. */}
             <FloatingPanel
               id="console.tracking"
-              title="Tracked set"
+              title="Tracking"
               resize={['e', 's']}
               className="globe-page__float"
             >
-              <GaugeCard
-                label="Tracking status"
-                value={count}
-                max={count + rejected.length}
-                display={String(count)}
-                unit={rejected.length ? `of ${count + rejected.length} objects` : 'objects'}
-                tone={source === 'snapshot' || source === 'replay' ? 'watch' : 'accent'}
-                footnote={sourceFootnote({ loading, source, snapshotEpoch, cachedAt })}
-              />
-            </FloatingPanel>
+              <div className="console__count">
+                <span className="console__count-value ui-readout">{loading ? '—' : count}</span>
+                <span className="console__count-unit">
+                  {rejected.length ? `of ${count + rejected.length} objects` : 'objects tracked'}
+                </span>
+              </div>
+              <p
+                className={`console__count-note${
+                  source === 'snapshot' || source === 'replay' ? ' is-degraded' : ''
+                }`}
+              >
+                {sourceFootnote({ loading, source, snapshotEpoch, cachedAt })}
+              </p>
 
-            <FloatingPanel id="console.feed" title="Feed" resize={['e', 's']} className="globe-page__float">
               <div className="console__feed">
                 <div className="console__feed-row">
                   <span className="console__feed-key">Source</span>
                   <span className="console__feed-val ui-readout">{SOURCE_LABEL[source] ?? '—'}</span>
                 </div>
                 <div className="console__feed-row">
+                  <span className="console__feed-key">Provider</span>
+                  <span className="console__feed-val ui-readout">{describeProviders(providers)}</span>
+                </div>
+                <div className="console__feed-row">
                   <span className="console__feed-key">Groups</span>
                   <span className="console__feed-val ui-readout" title={serverGroups.join(', ')}>
                     {serverGroups.length ? serverGroups.join(', ') : '—'}
                   </span>
-                </div>
-                <div className="console__feed-row">
-                  <span className="console__feed-key">Provider</span>
-                  <span className="console__feed-val ui-readout">{describeProviders(providers)}</span>
                 </div>
                 <div className="console__feed-row">
                   <span className="console__feed-key">Elements fetched</span>
@@ -369,7 +376,7 @@ function Console({ view, onChangeView }) {
               id="console.maneuver"
               title="Maneuver planning"
               resize={['e', 's']}
-              className="globe-page__float"
+              className="globe-page__float globe-page__float--fill"
             >
               <ManeuverPanel event={selectedEvent} maneuver={maneuver} />
             </FloatingPanel>
@@ -402,7 +409,7 @@ function Console({ view, onChangeView }) {
               id="console.ai"
               title="AI advisor"
               resize={['w', 's']}
-              className="globe-page__float"
+              className="globe-page__float globe-page__float--fill"
             >
               <AdvisorPanel event={selectedEvent} ai={ai} />
             </FloatingPanel>

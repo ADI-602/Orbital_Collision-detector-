@@ -29,6 +29,7 @@ import {
   isCoOrbitalRefusal,
   isNotARisk,
   isUnassessable,
+  pickInitialEvent,
   rankEvents,
   riskColorHex,
   splitTcaIso,
@@ -154,6 +155,42 @@ describe('classifyEncounter', () => {
 
   it('is sign-agnostic — speed is a magnitude', () => {
     expect(isCoOrbital({ ...DOCKED_EVENT, relative_speed_km_s: -0.004 })).toBe(true)
+  })
+})
+
+describe('pickInitialEvent', () => {
+  const injected = { ...ENVISAT_EVENT, origin: EVENT_ORIGIN.VALIDATION }
+  const liveYellow = {
+    ...GREEN_EVENT,
+    secondary_name: 'IRIDIUM 33 DEB',
+    pc: 8.8e-5,
+    threat_level: 'YELLOW',
+    origin: EVENT_ORIGIN.LIVE,
+  }
+  const liveRed = { ...ENVISAT_EVENT, secondary_name: 'COSMOS 2251 DEB', origin: EVENT_ORIGIN.LIVE }
+
+  it('opens on the most serious live detection, ahead of the injected case', () => {
+    expect(pickInitialEvent([injected, liveYellow, liveRed])).toBe(liveRed)
+  })
+
+  it('takes a live YELLOW over the injected case', () => {
+    expect(pickInitialEvent([injected, liveYellow])).toBe(liveYellow)
+  })
+
+  it('falls back to the injected case when nothing live is elevated', () => {
+    const liveGreen = { ...GREEN_EVENT, origin: EVENT_ORIGIN.LIVE }
+    expect(pickInitialEvent([liveGreen, injected])).toBe(injected)
+  })
+
+  it('never opens on a co-orbital pair, whatever its Pc', () => {
+    const docked = { ...DOCKED_EVENT, origin: EVENT_ORIGIN.LIVE }
+    expect(pickInitialEvent([docked])).toBeNull()
+    expect(pickInitialEvent([docked, injected])).toBe(injected)
+  })
+
+  it('returns null for an empty or missing list', () => {
+    expect(pickInitialEvent([])).toBeNull()
+    expect(pickInitialEvent(undefined)).toBeNull()
   })
 })
 

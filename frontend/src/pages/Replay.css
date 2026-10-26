@@ -6,7 +6,7 @@
 .replay__history {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .replay__case-name {
@@ -34,45 +34,19 @@
 .replay__case-body code,
 .replay__case-note code {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 0.9em;
   padding: 1px 4px;
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.35);
   color: var(--text-primary);
 }
 
-.replay__meta {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-}
-
-.replay__meta-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.replay__meta-key {
-  font-family: var(--font-sans);
-  font-size: var(--fs-micro);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-}
-
-.replay__meta-val {
+.replay__case-source {
   margin: 0;
   font-family: var(--font-sans);
   font-size: var(--fs-micro);
   line-height: 1.5;
-  color: var(--text-secondary);
-}
-
-.replay__meta-val.ui-readout {
-  font-family: var(--font-mono);
-  color: var(--text-primary);
+  color: var(--text-dim);
 }
 
 /* --- Centre overlays ---------------------------------------------------- */
@@ -82,9 +56,9 @@
 .replay__countdown {
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-inner);
-  background: rgba(8, 10, 14, 0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(9, 11, 15, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   pointer-events: none;
 }
 
@@ -114,9 +88,9 @@
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-pill);
-  background: rgba(8, 10, 14, 0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(9, 11, 15, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .replay__control {
@@ -228,4 +202,11 @@
 
 @media (max-width: 1700px) {
   .replay__controls-note { display: none; }
+}
+
+/* The four predictions and their reference ranges are the evidence this view
+   exists to show, so the strip gets enough height for all of it without a
+   scroll. The globe sits higher (globePage.css), so this costs little of it. */
+.replay .globe-page__float--strip:not([style*='height']) {
+  max-height: 40vh;
 }

@@ -1,7 +1,9 @@
+import MoreDetails from '../common/MoreDetails.jsx'
 import RiskBadge from '../common/RiskBadge.jsx'
 import TMinus from '../common/TMinus.jsx'
 import {
   EVENT_ORIGIN,
+  THREAT_THRESHOLDS,
   classifyEncounter,
   formatMissDistance,
   formatPc,
@@ -107,19 +109,12 @@ function EventDetail({ event, onOpenReplay }) {
           <span className="event-detail__arrow" aria-hidden="true">↔</span>
           <span className="event-detail__secondary">{event.secondary_name}</span>
         </div>
-        {coOrbital ? <RiskBadge label="Co-orbital" /> : <RiskBadge level={event.threat_level} />}
-      </div>
-
-      {injected && (
-        <div className="event-detail__provenance">
-          <span className="event-detail__provenance-title ui-label">Injected validation case</span>
-          <span className="event-detail__provenance-body">
-            {event.provenance?.label}. Published: {event.provenance?.published} (
-            {event.provenance?.source}). Replayed through the live pipeline — the
-            values below are computed, not quoted.
-          </span>
+        <div className="event-detail__tags">
+          {coOrbital ? <RiskBadge label="Co-orbital" /> : <RiskBadge level={event.threat_level} />}
+          {/* The tag stays on screen; its full provenance is one click away. */}
+          {injected && <span className="event-detail__tag">Injected · 2004 replay</span>}
         </div>
-      )}
+      </div>
 
       {/* Pc leads: it is the number the whole pipeline exists to produce. */}
       <div className="event-detail__headline">
@@ -128,6 +123,12 @@ function EventDetail({ event, onOpenReplay }) {
           <span className="event-detail__headline-na">Not applicable</span>
         ) : (
           <span className="event-detail__headline-value ui-readout">{formatPc(event.pc)}</span>
+        )}
+        {!coOrbital && (
+          <span className="event-detail__scale">
+            RED ≥ {THREAT_THRESHOLDS.RED.toExponential(0)} · YELLOW ≥{' '}
+            {THREAT_THRESHOLDS.YELLOW.toExponential(0)}
+          </span>
         )}
       </div>
 
@@ -160,16 +161,7 @@ function EventDetail({ event, onOpenReplay }) {
             {tca.date} {tca.time}
           </span>
         </div>
-        <div className="event-detail__row">
-          <span className="event-detail__key">Threat level</span>
-          <span className="event-detail__val ui-readout">{event.threat_level ?? '—'}</span>
-        </div>
       </div>
-
-      <p className="event-detail__source">
-        SGP4 propagation, refined TCA, 2D encounter-plane Pc — computed by the
-        physics pipeline. No AI involved in any number on this panel.
-      </p>
 
       {/*
         A countdown only means something against a clock that can reach the
@@ -179,32 +171,47 @@ function EventDetail({ event, onOpenReplay }) {
         has a clock that actually runs through the encounter.
       */}
       {injected ? (
-        <div className="event-detail__replay-cta">
-          <span className="event-detail__replay-note">
-            This encounter happened in October 2004. Counting down to it against
-            today&rsquo;s clock would be meaningless, so the countdown lives in
-            the replay view, which runs on a clock around the real TCA.
-          </span>
-          {onOpenReplay && (
-            <button type="button" className="event-detail__replay-button" onClick={onOpenReplay}>
-              Open Envisat replay
-            </button>
-          )}
-        </div>
+        onOpenReplay && (
+          <button type="button" className="event-detail__replay-button" onClick={onOpenReplay}>
+            Open Envisat replay
+          </button>
+        )
       ) : (
-        <TMinus
-          targetMs={isoToMs(event.tca_utc_iso)}
-          mode="wall"
-          note="Counting down against real UTC to the TCA the pipeline refined."
-        />
+        <TMinus targetMs={isoToMs(event.tca_utc_iso)} mode="wall" />
       )}
 
-      <p className="event-detail__globe-note">
-        {hasGlobePresence(event)
-          ? GLOBE_PRESENT_NOTE
-          : 'Not shown on the globe: this is a historical 2004 event, and the ' +
-            'globe is tracking objects at the current simulated time.'}
+      {/* The one provenance line that must never be hidden. */}
+      <p className="event-detail__source">
+        Computed by the physics pipeline. No AI in any number here.
       </p>
+
+      <MoreDetails>
+        <p>
+          SGP4 propagation, refined TCA, 2D encounter-plane Pc (Foster/Chan/Alfano).
+        </p>
+        {injected && (
+          <p>
+            <strong>Injected validation case.</strong> {event.provenance?.label}. Published:{' '}
+            {event.provenance?.published} ({event.provenance?.source}). Replayed through
+            the live pipeline — the values above are computed, not quoted.
+          </p>
+        )}
+        {injected ? (
+          <p>
+            This encounter happened in October 2004. Counting down to it against
+            today&rsquo;s clock would be meaningless, so the countdown lives in the
+            replay view, which runs on a clock around the real TCA.
+          </p>
+        ) : (
+          <p>The countdown runs against real UTC to the TCA the pipeline refined.</p>
+        )}
+        <p>
+          {hasGlobePresence(event)
+            ? GLOBE_PRESENT_NOTE
+            : 'Not shown on the globe: this is a historical 2004 event, and the ' +
+              'globe is tracking objects at the current time.'}
+        </p>
+      </MoreDetails>
     </div>
   )
 }

@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 import ErrorState from '../common/ErrorState.jsx'
 import LoadingState from '../common/LoadingState.jsx'
 import { adviceProvenance } from '../../lib/advice.js'
@@ -9,6 +11,24 @@ const SECTIONS = [
   ['recommended_action', 'Recommended action'],
   ['tradeoff_analysis', 'Trade-offs'],
 ]
+
+/**
+ * Whole seconds since `active` last became true; 0 while inactive.
+ *
+ * A live model answer takes ~20 s (measured 2026-10-26). Silence that long
+ * reads as a hang on stage; a counting clock reads as work in progress.
+ */
+function useElapsedSeconds(active) {
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    if (!active) return undefined
+    const startedAt = Date.now()
+    setSeconds(0)
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000)
+    return () => clearInterval(timer)
+  }, [active])
+  return active ? seconds : 0
+}
 
 /**
  * The AI layer's commentary on the selected conjunction.
@@ -27,6 +47,7 @@ const SECTIONS = [
  */
 function AdvisorPanel({ event, ai }) {
   const { status, advice, error, refusal, canAsk, ask } = ai
+  const elapsed = useElapsedSeconds(status === 'running')
 
   if (!event) {
     return (
@@ -71,7 +92,15 @@ function AdvisorPanel({ event, ai }) {
         )}
       </div>
 
-      {status === 'running' && <LoadingState label="ASKING THE ADVISOR" />}
+      {status === 'running' && (
+        <>
+          <LoadingState label="ASKING THE ADVISOR" />
+          <p className="advisor__note">
+            <span className="ui-readout">{elapsed} s</span> · a live answer usually takes about 20 s.
+            The figures in the other panels are already final.
+          </p>
+        </>
+      )}
 
       {status === 'error' && (
         <ErrorState

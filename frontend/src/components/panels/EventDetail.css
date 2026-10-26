@@ -29,6 +29,31 @@
   gap: var(--space-2);
 }
 
+.event-detail__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Same treatment as the event list's INJECTED tag, so the two read as one. */
+.event-detail__tag {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--risk-watch-soft);
+  color: var(--risk-watch);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.event-detail__scale {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
 .event-detail__pair {
   display: flex;
   align-items: center;

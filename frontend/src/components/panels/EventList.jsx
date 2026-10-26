@@ -94,6 +94,11 @@ function EventList({
   const neverRun = pass?.state === PASS_STATE.NEVER_RUN
   const passFailed = pass?.state === PASS_STATE.FAILED
   const running = watchingPass || pass?.state === PASS_STATE.RUNNING
+  // Running with nothing completed behind it: there is no result yet, so the
+  // panel must not report "0 conjunctions" or "no close approaches" — both
+  // are claims about a screening that has not happened.
+  const firstPass = running && !pass?.finished_at_unix && !liveError
+  const noResultYet = neverRun || firstPass
 
   return (
     <div className="event-list">
@@ -101,7 +106,9 @@ function EventList({
         <span className="event-list__meta-text ui-label">
           {liveError
             ? 'Monitoring feed unreachable'
-            : neverRun
+            : firstPass
+              ? 'First screening pass running'
+              : neverRun
               ? 'No screening pass has completed yet'
               : `${live.detected} conjunction${live.detected === 1 ? '' : 's'}` +
                 (live.highRisk > 0 ? ` · ${live.highRisk} high risk` : '') +
@@ -128,7 +135,7 @@ function EventList({
 
       {/* Coverage is a claim about the whole set, so it is stated before any
           "none found" phrasing below can be read as one. */}
-      {coverage.text && !liveError && !neverRun && (
+      {coverage.text && !liveError && !noResultYet && (
         <p
           className={`event-list__coverage ${coverage.complete ? '' : 'event-list__coverage--partial'}`}
         >
@@ -163,17 +170,21 @@ function EventList({
         />
       )}
 
-      {neverRun && !liveError && (
+      {noResultYet && !liveError && (
         <div className="event-list__empty">
-          <span className="event-list__empty-title">No pass has completed yet</span>
+          <span className="event-list__empty-title">
+            {firstPass ? 'First screening pass in progress' : 'No pass has completed yet'}
+          </span>
           <span className="event-list__empty-hint">
-            The server screens the tracked set on a timer and the first pass has
-            not finished. This is not a result — nothing has been screened yet.
+            {firstPass
+              ? 'The server is screening every pair in the tracked set. Detections appear here when the pass completes — usually a few minutes after the backend starts. '
+              : 'The server screens the tracked set on a timer and the first pass has not finished. '}
+            This is not a result — nothing has been screened yet.
           </span>
         </div>
       )}
 
-      {live.detected === 0 && !liveError && !bothFailed && !neverRun && !passFailed && (
+      {live.detected === 0 && !liveError && !bothFailed && !noResultYet && !passFailed && (
         <div className="event-list__empty">
           <span className="event-list__empty-title">
             {coverage.complete
