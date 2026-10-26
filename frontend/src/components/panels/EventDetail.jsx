@@ -32,6 +32,8 @@ import './EventDetail.css'
  * @param {object} props
  * @param {object|null} props.event selected screening event, or null
  * @param {() => void} [props.onOpenReplay] switch to the Envisat replay view
+ * @param {() => void} [props.onShowOnGlobe] fly the globe to the encounter point;
+ *   supplied only when the event has one on this globe
  */
 /**
  * What the globe is showing for a selected pair.
@@ -47,7 +49,7 @@ const GLOBE_PRESENT_NOTE =
   'are propagated in-browser to show the geometry; the numbers here are the ' +
   "pipeline's."
 
-function EventDetail({ event, onOpenReplay }) {
+function EventDetail({ event, onOpenReplay, onShowOnGlobe }) {
   if (!event) {
     return (
       <div className="event-detail event-detail--empty">
@@ -183,6 +185,12 @@ function EventDetail({ event, onOpenReplay }) {
         )
       ) : (
         <TMinus targetMs={isoToMs(event.tca_utc_iso)} mode="wall" />
+      )}
+
+      {onShowOnGlobe && (
+        <button type="button" className="event-detail__replay-button" onClick={onShowOnGlobe}>
+          Show encounter on globe
+        </button>
       )}
 
       {/* The one provenance line that must never be hidden. */}

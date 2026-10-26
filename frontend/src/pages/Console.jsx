@@ -19,6 +19,7 @@ import { useConjunctionAlerts } from '../hooks/useConjunctionAlerts.js'
 import { useManeuver } from '../hooks/useManeuver.js'
 import { useScreening } from '../hooks/useScreening.js'
 import { eventKey, hasGlobePresence, pickInitialEvent, riskColorHex } from '../lib/conjunctions.js'
+import { isoToMs } from '../lib/replay.js'
 import { DEFAULT_SPEED_MULTIPLIER, formatSimClock } from '../lib/simClock.js'
 import '../styles/globePage.css'
 import './Console.css'
@@ -127,6 +128,7 @@ function Console({ view, onChangeView }) {
     refresh: refreshTle,
     propagateAll,
     orbitTrackFor,
+    orbitPointFor,
     tleFor,
   } = useLiveSatellites()
 
@@ -208,6 +210,18 @@ function Console({ view, onChangeView }) {
     return tracks ? { tracks, colorHex: riskColorHex(selectedEvent) } : null
   }, [selectedEvent, maneuver.result])
 
+  // Where a selected LIVE event happens, for the globe's closest-approach
+  // marker. The pipeline's own TCA; the globe places it (see CesiumGlobe).
+  const encounterMarker = useMemo(() => {
+    if (!hasGlobePresence(selectedEvent)) return null
+    const tcaMs = isoToMs(selectedEvent.tca_utc_iso)
+    if (!Number.isFinite(tcaMs)) return null
+    return { id: selectedEvent.primary_id, tcaMs, colorHex: riskColorHex(selectedEvent) }
+  }, [selectedEvent])
+
+  const [focusRequest, setFocusRequest] = useState(null)
+  const showEncounterOnGlobe = useCallback(() => setFocusRequest({ nonce: Date.now() }), [])
+
   return (
     <div className="globe-page console">
       {/* The globe is the page. Everything else floats over it. */}
@@ -221,6 +235,9 @@ function Console({ view, onChangeView }) {
           highlightPair={highlightPair}
           orbitTrackFor={orbitTrackFor}
           maneuverOverlay={maneuverOverlay}
+          encounterMarker={encounterMarker}
+          orbitPointFor={orbitPointFor}
+          focusRequest={focusRequest}
           simTimeFor={realTime ? wallClock : null}
           clockKey={realTime ? 'realtime' : 'fast'}
         />
@@ -405,6 +422,7 @@ function Console({ view, onChangeView }) {
               <EventDetail
                 event={selectedEvent}
                 onOpenReplay={onChangeView ? () => onChangeView('replay') : undefined}
+                onShowOnGlobe={encounterMarker ? showEncounterOnGlobe : undefined}
               />
             </FloatingPanel>
 

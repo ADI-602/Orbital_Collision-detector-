@@ -170,3 +170,36 @@ export function temeTrackToEcef(points, when) {
 export function orbitTrackEcef(satrec, when, samples = TRACK_SAMPLES) {
   return temeTrackToEcef(sampleOrbitTeme(satrec, when, samples), when)
 }
+
+/**
+ * Where an object will be at `at`, drawn in the same frame as its ring for
+ * `frameWhen` — that is, TEME(at) rotated by GMST(frameWhen).
+ *
+ * This is what puts a future closest-approach marker ON the two rings instead
+ * of floating off them. The ring is the orbit as it stands at the drawn
+ * instant; the object's true ground position hours later is somewhere else
+ * entirely, because the Earth has turned underneath (~15 deg an hour). In this
+ * frame the marker is the point on the drawn orbit where the encounter
+ * happens, and it turns with the rings as the clock advances.
+ *
+ * Off the ring only by real orbital drift (J2 nodal regression) between
+ * `frameWhen` and `at` — a few degrees a day for LEO, left alone for the same
+ * reason the ring's closure gap is.
+ *
+ * Returns null for an unreadable instant or a sample that fails to propagate.
+ *
+ * @param {object} satrec
+ * @param {Date} at          the instant whose position is wanted (e.g. a TCA)
+ * @param {Date} frameWhen   the instant the rings are being drawn for
+ * @returns {{x: number, y: number, z: number}|null} km, ECEF of `frameWhen`
+ */
+export function orbitPointEcef(satrec, at, frameWhen) {
+  if (!(at instanceof Date) || Number.isNaN(at.getTime())) return null
+  const p = satellite.propagate(satrec, at)?.position
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) {
+    return null
+  }
+  const radiusKm = Math.hypot(p.x, p.y, p.z)
+  if (radiusKm < MIN_RADIUS_KM || radiusKm > MAX_RADIUS_KM) return null
+  return temeTrackToEcef([p], frameWhen)?.[0] ?? null
+}

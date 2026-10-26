@@ -185,6 +185,7 @@
 }
 
 .event-detail__replay-button {
+  align-self: flex-start;
   padding: var(--space-2) var(--space-4);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-pill);

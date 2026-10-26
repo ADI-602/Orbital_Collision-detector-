@@ -53,6 +53,16 @@ import './CesiumGlobe.css'
  * @param {number} [props.telemetryIntervalMs] how often React hears about the
  *   clock. The default is deliberately coarse; the replay lowers it because a
  *   countdown refreshed only four times a second visibly stutters.
+ * @param {{id: string, tcaMs: number, colorHex: string} | null} [props.encounterMarker]
+ *   mark where the selected conjunction happens: object `id`'s position at
+ *   its TCA, drawn in the same frame as the rings (lib/orbitTrack.js
+ *   orbitPointEcef), so the marker sits where the two drawn orbits cross and
+ *   turns with them. A picture of the geometry from the same element set and
+ *   propagator as the rings — never a figure.
+ * @param {((id: string, at: Date, frameWhen: Date) => {x: number, y: number, z: number}|null) | null} [props.orbitPointFor]
+ *   supplies that position, km ECEF; from whichever hook owns the element sets.
+ * @param {{nonce: number} | null} [props.focusRequest]
+ *   fly the camera to the encounter marker. A new `nonce` repeats the flight.
  * @param {{longitude_deg: number, latitude_deg: number} | null} [props.initialView]
  *   where to point the camera, applied once per distinct location (to ~0.1°)
  *   so it never fights a viewer who has since dragged the globe. The replay
@@ -92,6 +102,13 @@ const TRACK_REFRESH_MS = 250
 /** Camera altitude for the default and any requested view. */
 const CAMERA_HEIGHT_M = 24_000_000
 
+/** Closer than the default, so a flown-to point sits large in frame. */
+const FOCUS_HEIGHT_M = 12_000_000
+const FOCUS_FLIGHT_S = 1.5
+
+/** Entity id for the closest-approach marker; never a tracked-object id. */
+const ENCOUNTER_ENTITY_ID = 'encounter-point'
+
 /** Ring opacity: present enough to read, faint enough not to fight the markers. */
 const TRACK_ALPHA = 0.85
 const TRACK_DEPTH_FAIL_ALPHA = 0.28
@@ -127,6 +144,9 @@ function CesiumGlobe({
   clockKey = 'live',
   telemetryIntervalMs = 250,
   initialView = null,
+  encounterMarker = null,
+  orbitPointFor = null,
+  focusRequest = null,
 }) {
   const containerRef = useRef(null)
   const viewerRef = useRef(null)
@@ -157,6 +177,12 @@ function CesiumGlobe({
   const initialViewRef = useRef(initialView)
   initialViewRef.current = initialView
   const appliedViewRef = useRef(null)
+  const encounterMarkerRef = useRef(encounterMarker)
+  encounterMarkerRef.current = encounterMarker
+  const orbitPointForRef = useRef(orbitPointFor)
+  orbitPointForRef.current = orbitPointFor
+  // { entity, key, position } for the closest-approach marker, or null.
+  const encounterEntityRef = useRef(null)
   const linkEntityRef = useRef(null)
   // Read by the polyline's CallbackProperty every frame; see the tick below.
   const linkPositionsRef = useRef([])
@@ -265,6 +291,7 @@ function CesiumGlobe({
       tracks.clear()
       linkEntityRef.current = null
       linkColorRef.current = null
+      encounterEntityRef.current = null
       const viewer = viewerRef.current
       viewerRef.current = null
       if (viewer && !viewer.isDestroyed()) viewer.destroy()
@@ -277,6 +304,22 @@ function CesiumGlobe({
   useEffect(() => {
     applyInitialView(viewerRef.current, initialViewRef.current, appliedViewRef)
   }, [viewLon, viewLat])
+
+  // Fly to the closest-approach marker where it stands now. Reduced-motion
+  // users get a cut, not a flight.
+  const focusNonce = focusRequest?.nonce ?? null
+  useEffect(() => {
+    const viewer = viewerRef.current
+    const position = encounterEntityRef.current?.position
+    if (focusNonce === null || !viewer || viewer.isDestroyed() || !position) return
+    const carto = Cesium.Cartographic.fromCartesian(position)
+    if (!carto) return
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, FOCUS_HEIGHT_M),
+      duration: reduceMotion ? 0 : FOCUS_FLIGHT_S,
+    })
+  }, [focusNonce])
 
   // --- Animation loop: propagate and move markers -------------------------
   useEffect(() => {
@@ -356,6 +399,64 @@ function CesiumGlobe({
         colorHex: MARKER_SELECTED_HEX, dashed: false, width: 2, positions: post,
       })
       return arcs
+    }
+
+    /**
+     * Place, move or remove the closest-approach marker for the drawn instant.
+     * Re-placed on the ring cadence, because the frame it is drawn in turns
+     * with the clock exactly as the rings do.
+     */
+    const syncEncounterMarker = (viewer, simTime) => {
+      const marker = encounterMarkerRef.current
+      const key = marker ? `${marker.id}|${marker.tcaMs}|${marker.colorHex}` : null
+      const current = encounterEntityRef.current
+      if (current && current.key !== key) {
+        viewer.entities.remove(current.entity)
+        encounterEntityRef.current = null
+      }
+      if (!marker) return
+
+      const point = orbitPointForRef.current?.(marker.id, new Date(marker.tcaMs), simTime)
+      if (!point) {
+        // No usable element set: no marker, rather than one in a guessed place.
+        if (encounterEntityRef.current) {
+          viewer.entities.remove(encounterEntityRef.current.entity)
+          encounterEntityRef.current = null
+        }
+        return
+      }
+      // km from the physics-facing modules, metres for Cesium.
+      const position = new Cesium.Cartesian3(point.x * 1000, point.y * 1000, point.z * 1000)
+
+      if (encounterEntityRef.current) {
+        encounterEntityRef.current.entity.position = position
+        encounterEntityRef.current.position = position
+        return
+      }
+
+      const color = Cesium.Color.fromCssColorString(marker.colorHex)
+      const entity = viewer.entities.add({
+        id: ENCOUNTER_ENTITY_ID,
+        position,
+        point: {
+          pixelSize: 11,
+          color: color.withAlpha(0.35),
+          outlineColor: color,
+          outlineWidth: 2,
+        },
+        label: {
+          text: 'Closest approach (TCA)',
+          font: '600 13px Inter, system-ui, sans-serif',
+          fillColor: Cesium.Color.fromCssColorString('#f4f4f5'),
+          showBackground: true,
+          backgroundColor: Cesium.Color.fromCssColorString('rgba(5,5,5,0.75)'),
+          backgroundPadding: new Cesium.Cartesian2(6, 4),
+          pixelOffset: new Cesium.Cartesian2(0, -16),
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+        },
+      })
+      encounterEntityRef.current = { entity, key, position }
     }
 
     const removeTrack = (viewer, id) => {
@@ -639,6 +740,7 @@ function CesiumGlobe({
       if (now - lastTrackRefresh > TRACK_REFRESH_MS) {
         lastTrackRefresh = now
         syncOrbitTracks(viewer, simTime)
+        syncEncounterMarker(viewer, simTime)
       }
 
       // Throttle React updates: the HUD only needs a few refreshes a second,

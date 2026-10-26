@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   TRACK_SAMPLES,
   orbitPeriodMinutes,
+  orbitPointEcef,
   orbitTrackEcef,
   sampleOrbitTeme,
   temeTrackToEcef,
@@ -43,6 +44,53 @@ function issSatrec() {
 
 const magnitude = (p) => Math.hypot(p.x, p.y, p.z)
 const separation = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
+
+/** Shortest distance from a point to a polyline, km. */
+function distanceToPolyline(point, line) {
+  let best = Infinity
+  for (let i = 0; i < line.length - 1; i += 1) {
+    const a = line[i]
+    const b = line[i + 1]
+    const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z }
+    const ap = { x: point.x - a.x, y: point.y - a.y, z: point.z - a.z }
+    const len2 = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z
+    const t = Math.max(0, Math.min(1, (ap.x * ab.x + ap.y * ab.y + ap.z * ab.z) / len2))
+    const foot = { x: a.x + t * ab.x, y: a.y + t * ab.y, z: a.z + t * ab.z }
+    best = Math.min(best, separation(point, foot))
+  }
+  return best
+}
+
+describe('orbitPointEcef', () => {
+  it('is the marker itself when asked for the drawn instant', () => {
+    // At at === frameWhen it is exactly the ring's centre sample, which is
+    // where the marker sits.
+    const ring = orbitTrackEcef(issSatrec(), WHEN)
+    const point = orbitPointEcef(issSatrec(), WHEN, WHEN)
+    expect(separation(point, ring[(TRACK_SAMPLES - 1) / 2])).toBeLessThan(1e-6)
+  })
+
+  it('puts a future instant on the ring drawn now, up to orbital drift', () => {
+    // The ISS node regresses ~5 deg/day, so 12 h moves the plane ~2.5 deg:
+    // at most r * dOmega * sin(i) ~ 6800 * 0.044 * 0.78 ~ 230 km. Anything
+    // near Earth-rotation scale (~thousands of km after 12 h) is the bug this
+    // function exists to avoid.
+    const later = new Date(WHEN.getTime() + 12 * 3_600_000)
+    const ring = orbitTrackEcef(issSatrec(), WHEN)
+    const point = orbitPointEcef(issSatrec(), later, WHEN)
+    expect(distanceToPolyline(point, ring)).toBeLessThan(250)
+
+    // The same instant in its OWN frame (its true ground position) is far off
+    // this ring — the reason a TCA marker must not be placed that way.
+    const trueGround = orbitPointEcef(issSatrec(), later, later)
+    expect(distanceToPolyline(trueGround, ring)).toBeGreaterThan(1000)
+  })
+
+  it('returns null for an unreadable instant', () => {
+    expect(orbitPointEcef(issSatrec(), new Date('nope'), WHEN)).toBeNull()
+    expect(orbitPointEcef(issSatrec(), WHEN, new Date('nope'))).toBeNull()
+  })
+})
 
 describe('orbitPeriodMinutes', () => {
   it('reads satrec.no as radians per minute', () => {

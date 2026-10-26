@@ -4,7 +4,7 @@ import { getTrackedObjects } from '../api/tracking.js'
 import { CanceledError } from '../api/client.js'
 import { buildSatrec, propagateToGeodetic } from '../lib/geodetic.js'
 import { classifyObject } from '../lib/objectType.js'
-import { orbitTrackEcef } from '../lib/orbitTrack.js'
+import { orbitPointEcef, orbitTrackEcef } from '../lib/orbitTrack.js'
 import { parseTleText } from '../lib/tle.js'
 import { readCachedTle, safeLocalStorage, writeCachedTle } from '../lib/tleCache.js'
 import { SNAPSHOT_CAPTURED_UTC, TLE_SNAPSHOT_TEXT } from '../lib/tleSnapshot.js'
@@ -306,6 +306,21 @@ export function useLiveSatellites() {
    * @param {string} id
    * @returns {{name: string, line1: string, line2: string}|null}
    */
+  /**
+   * An object's position at `at`, in the frame of the rings drawn for
+   * `frameWhen` — see lib/orbitTrack.js orbitPointEcef. Used to put a
+   * closest-approach marker where the drawn orbits cross. Visualisation only.
+   *
+   * @param {string} id
+   * @param {Date} at
+   * @param {Date} frameWhen
+   * @returns {{x: number, y: number, z: number}|null} km, ECEF
+   */
+  const orbitPointFor = (id, at, frameWhen) => {
+    const rec = recordById(id)
+    return rec ? orbitPointEcef(rec.satrec, at, frameWhen) : null
+  }
+
   const tleFor = (id) => {
     const rec = recordById(id)
     if (!rec?.line1 || !rec?.line2) return null
@@ -326,6 +341,7 @@ export function useLiveSatellites() {
     refresh,
     propagateAll,
     orbitTrackFor,
+    orbitPointFor,
     tleFor,
   }
 }
