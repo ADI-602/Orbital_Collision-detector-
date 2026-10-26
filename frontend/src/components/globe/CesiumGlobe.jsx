@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
 import * as Cesium from 'cesium'
 
-import { alignTrackToInstant } from '../../lib/maneuver.js'
+import { ORBIT_IDENTITY_HEX, formatMissDistance } from '../../lib/conjunctions.js'
+import { alignTrackToInstant, formatDeltaV } from '../../lib/maneuver.js'
 import { markerImage, markerPixelSize } from '../../lib/markerImage.js'
 import { OBJECT_KIND } from '../../lib/objectType.js'
 import { computeSimTime, DEFAULT_SPEED_MULTIPLIER } from '../../lib/simClock.js'
@@ -53,12 +54,13 @@ import './CesiumGlobe.css'
  * @param {number} [props.telemetryIntervalMs] how often React hears about the
  *   clock. The default is deliberately coarse; the replay lowers it because a
  *   countdown refreshed only four times a second visibly stutters.
- * @param {{id: string, tcaMs: number, colorHex: string} | null} [props.encounterMarker]
+ * @param {{id: string, tcaMs: number, colorHex: string, missDistanceM?: number} | null} [props.encounterMarker]
  *   mark where the selected conjunction happens: object `id`'s position at
  *   its TCA, drawn in the same frame as the rings (lib/orbitTrack.js
  *   orbitPointEcef), so the marker sits where the two drawn orbits cross and
  *   turns with them. A picture of the geometry from the same element set and
- *   propagator as the rings — never a figure.
+ *   propagator as the rings. Its label quotes `missDistanceM`, the pipeline's
+ *   figure; nothing is measured off the drawing.
  * @param {((id: string, at: Date, frameWhen: Date) => {x: number, y: number, z: number}|null) | null} [props.orbitPointFor]
  *   supplies that position, km ECEF; from whichever hook owns the element sets.
  * @param {{nonce: number, objectId?: string} | null} [props.focusRequest]
@@ -109,6 +111,9 @@ const FOCUS_FLIGHT_S = 1.5
 
 /** Entity id for the closest-approach marker; never a tracked-object id. */
 const ENCOUNTER_ENTITY_ID = 'encounter-point'
+
+/** Entity id for the start of a simulated burn's flown arc. */
+const BURN_ENTITY_ID = 'burn-point'
 
 /** Ring opacity: present enough to read, faint enough not to fight the markers. */
 const TRACK_ALPHA = 0.85
@@ -184,6 +189,8 @@ function CesiumGlobe({
   orbitPointForRef.current = orbitPointFor
   // { entity, key, position } for the closest-approach marker, or null.
   const encounterEntityRef = useRef(null)
+  const burnEntityRef = useRef(null)
+  const burnPointRef = useRef(null)
   const linkEntityRef = useRef(null)
   // Read by the polyline's CallbackProperty every frame; see the tick below.
   const linkPositionsRef = useRef([])
@@ -293,6 +300,7 @@ function CesiumGlobe({
       linkEntityRef.current = null
       linkColorRef.current = null
       encounterEntityRef.current = null
+      burnEntityRef.current = null
       const viewer = viewerRef.current
       viewerRef.current = null
       if (viewer && !viewer.isDestroyed()) viewer.destroy()
@@ -339,21 +347,22 @@ function CesiumGlobe({
     /**
      * Which objects should be wearing an orbit ring, and how it is drawn.
      *
-     * Colour carries risk, shape carries identity — the same rule CLAUDE.md
-     * §5.2 imposes on object type. So both members of a conjunction share the
-     * event's risk colour, and the SECONDARY is dashed to tell them apart.
-     * An object selected on its own gets the accent colour, which is chrome
-     * (selection), never a risk token.
+     * Each member of a conjunction gets its own identity colour
+     * (styles/tokens.css --orbit-*): primary solid, secondary dashed, so the
+     * two read apart by colour AND by dash for colour-blind viewers. The
+     * event's risk colour stays on the TCA marker and the line joining the
+     * pair. An object selected on its own gets the accent colour, which is
+     * chrome (selection), never a risk token.
      */
     const wantedTracks = () => {
       const wanted = new Map()
       const highlight = highlightRef.current
 
       if (highlight?.primaryId) {
-        wanted.set(highlight.primaryId, { colorHex: highlight.colorHex, dashed: false })
+        wanted.set(highlight.primaryId, { colorHex: ORBIT_IDENTITY_HEX.primary, dashed: false })
       }
       if (highlight?.secondaryId && !wanted.has(highlight.secondaryId)) {
-        wanted.set(highlight.secondaryId, { colorHex: highlight.colorHex, dashed: true })
+        wanted.set(highlight.secondaryId, { colorHex: ORBIT_IDENTITY_HEX.secondary, dashed: true })
       }
 
       const selected = selectedRef.current
@@ -364,87 +373,72 @@ function CesiumGlobe({
     }
 
     /**
-     * The flown and unflown arcs of a simulated burn.
+     * The flown arc of a simulated burn, from the burn to just past TCA.
      *
-     * Both are drawn, and at this scale they are the SAME LINE: the burn moves
-     * the trajectory a few hundred metres across an arc tens of thousands of
-     * kilometres long. That is not a rendering failure, it is the physics, and
-     * ManeuverPanel draws the encounter to scale where the difference is
-     * actually visible. What the globe adds is context — which stretch of the
-     * orbit runs from the burn to the encounter.
+     * Only the flown arc is drawn. The unflown one runs within a few hundred
+     * metres of it across tens of thousands of kilometres, so at globe scale
+     * the two are the same line, and drawing both made a confusing double band
+     * beside the orbit ring. The unflown path IS the primary's orbit ring,
+     * which is already on screen. ManeuverPanel draws the encounter to scale,
+     * where the difference is actually visible.
      *
-     * The unflown arc keeps the event's risk colour, because it is still the
-     * trajectory that carries the risk. The flown one is drawn in the accent:
-     * a planned burn is a proposed action, which is chrome, not a threat level
-     * (styles/tokens.css forbids mixing the two systems).
+     * The arc is in the accent: a planned burn is a proposed action, which is
+     * chrome, not a threat level. Its first point gets a labelled "Burn"
+     * marker (see syncBurnMarker), stashed in burnPointRef.
      *
      * Returns Cartesian3 arrays keyed like the orbit rings, so one upsert loop
      * serves both.
      */
     const wantedManeuverArcs = (simTime) => {
+      burnPointRef.current = null
       const overlay = maneuverRef.current
       const tracks = overlay?.tracks
       const times = tracks?.sample_utc_iso
       if (!tracks || !Array.isArray(times) || times.length < 2) return new Map()
 
-      const toCartesians = (rows) => {
-        const aligned = alignTrackToInstant(rows, times, simTime)
-        if (!aligned) return null
-        return aligned.map((p) => new Cesium.Cartesian3(p.x * 1000, p.y * 1000, p.z * 1000))
+      const aligned = alignTrackToInstant(tracks.post_burn_pos_ecef_km, times, simTime)
+      if (!aligned) return new Map()
+      const post = aligned.map((p) => new Cesium.Cartesian3(p.x * 1000, p.y * 1000, p.z * 1000))
+
+      // Draw from the burn onwards; before it the flown path is the orbit ring.
+      const burnIndex = Number.isInteger(tracks.burn_sample_index)
+        ? Math.min(Math.max(tracks.burn_sample_index, 0), post.length - 2)
+        : 0
+      const flown = post.slice(burnIndex)
+
+      burnPointRef.current = {
+        position: flown[0],
+        text: `Burn ${formatDeltaV(overlay.deltaVCmS)}`,
       }
 
-      const pre = toCartesians(tracks.pre_burn_pos_ecef_km)
-      const post = toCartesians(tracks.post_burn_pos_ecef_km)
-      if (!pre || !post) return new Map()
-
-      const arcs = new Map()
-      // Drawn first and wider, so the flown arc reads as sitting inside it.
-      arcs.set('maneuver:pre', {
-        colorHex: overlay.colorHex, dashed: false, width: 5, positions: pre,
-      })
-      arcs.set('maneuver:post', {
-        colorHex: MARKER_SELECTED_HEX, dashed: false, width: 2, positions: post,
-      })
-      return arcs
+      return new Map([
+        ['maneuver:post', { colorHex: MARKER_SELECTED_HEX, dashed: false, width: 2.5, positions: flown }],
+      ])
     }
 
     /**
-     * Place, move or remove the closest-approach marker for the drawn instant.
-     * Re-placed on the ring cadence, because the frame it is drawn in turns
-     * with the clock exactly as the rings do.
+     * Place, move or remove one labelled point marker held in `slotRef`.
+     * `spec` null removes it; a changed `spec.key` rebuilds it; otherwise only
+     * the position moves.
      */
-    const syncEncounterMarker = (viewer, simTime) => {
-      const marker = encounterMarkerRef.current
-      const key = marker ? `${marker.id}|${marker.tcaMs}|${marker.colorHex}` : null
-      const current = encounterEntityRef.current
-      if (current && current.key !== key) {
+    const syncPointMarker = (viewer, slotRef, entityId, spec) => {
+      const current = slotRef.current
+      if (current && (!spec || current.key !== spec.key)) {
         viewer.entities.remove(current.entity)
-        encounterEntityRef.current = null
+        slotRef.current = null
       }
-      if (!marker) return
+      if (!spec) return
 
-      const point = orbitPointForRef.current?.(marker.id, new Date(marker.tcaMs), simTime)
-      if (!point) {
-        // No usable element set: no marker, rather than one in a guessed place.
-        if (encounterEntityRef.current) {
-          viewer.entities.remove(encounterEntityRef.current.entity)
-          encounterEntityRef.current = null
-        }
-        return
-      }
-      // km from the physics-facing modules, metres for Cesium.
-      const position = new Cesium.Cartesian3(point.x * 1000, point.y * 1000, point.z * 1000)
-
-      if (encounterEntityRef.current) {
-        encounterEntityRef.current.entity.position = position
-        encounterEntityRef.current.position = position
+      if (slotRef.current) {
+        slotRef.current.entity.position = spec.position
+        slotRef.current.position = spec.position
         return
       }
 
-      const color = Cesium.Color.fromCssColorString(marker.colorHex)
+      const color = Cesium.Color.fromCssColorString(spec.colorHex)
       const entity = viewer.entities.add({
-        id: ENCOUNTER_ENTITY_ID,
-        position,
+        id: entityId,
+        position: spec.position,
         point: {
           pixelSize: 11,
           color: color.withAlpha(0.35),
@@ -452,7 +446,7 @@ function CesiumGlobe({
           outlineWidth: 2,
         },
         label: {
-          text: 'Closest approach (TCA)',
+          text: spec.text,
           font: '600 13px Inter, system-ui, sans-serif',
           fillColor: Cesium.Color.fromCssColorString('#f4f4f5'),
           showBackground: true,
@@ -463,7 +457,46 @@ function CesiumGlobe({
           horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
         },
       })
-      encounterEntityRef.current = { entity, key, position }
+      slotRef.current = { entity, key: spec.key, position: spec.position }
+    }
+
+    /**
+     * The closest-approach marker for the drawn instant, labelled with the
+     * pipeline's miss distance. Re-placed on the ring cadence, because the
+     * frame it is drawn in turns with the clock exactly as the rings do.
+     */
+    const syncEncounterMarker = (viewer, simTime) => {
+      const marker = encounterMarkerRef.current
+      // No usable element set: no marker, rather than one in a guessed place.
+      const point = marker
+        ? orbitPointForRef.current?.(marker.id, new Date(marker.tcaMs), simTime)
+        : null
+      if (!marker || !point) {
+        syncPointMarker(viewer, encounterEntityRef, ENCOUNTER_ENTITY_ID, null)
+        return
+      }
+      const miss = Number.isFinite(marker.missDistanceM)
+        ? ` · ${formatMissDistance(marker.missDistanceM)} miss`
+        : ''
+      const text = `Closest approach (TCA)${miss}`
+      syncPointMarker(viewer, encounterEntityRef, ENCOUNTER_ENTITY_ID, {
+        key: `${marker.id}|${marker.tcaMs}|${marker.colorHex}|${text}`,
+        // km from the physics-facing modules, metres for Cesium.
+        position: new Cesium.Cartesian3(point.x * 1000, point.y * 1000, point.z * 1000),
+        colorHex: marker.colorHex,
+        text,
+      })
+    }
+
+    /** Where the simulated burn happens, on its flown arc (set by wantedManeuverArcs). */
+    const syncBurnMarker = (viewer) => {
+      const burn = burnPointRef.current
+      syncPointMarker(
+        viewer,
+        burnEntityRef,
+        BURN_ENTITY_ID,
+        burn ? { key: burn.text, position: burn.position, colorHex: MARKER_SELECTED_HEX, text: burn.text } : null,
+      )
     }
 
     const removeTrack = (viewer, id) => {
@@ -646,7 +679,8 @@ function CesiumGlobe({
         let colorHex = MARKER_DEFAULT_HEX
         let scale = 1
         if (isPairMember) {
-          colorHex = highlight.colorHex
+          colorHex =
+            sat.id === highlight.primaryId ? ORBIT_IDENTITY_HEX.primary : ORBIT_IDENTITY_HEX.secondary
           scale = 1.7
           if (sat.id === highlight.primaryId) pairPrimaryPos = position
           else pairSecondaryPos = position
@@ -748,6 +782,7 @@ function CesiumGlobe({
         lastTrackRefresh = now
         syncOrbitTracks(viewer, simTime)
         syncEncounterMarker(viewer, simTime)
+        syncBurnMarker(viewer)
       }
 
       // Throttle React updates: the HUD only needs a few refreshes a second,

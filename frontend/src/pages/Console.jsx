@@ -213,7 +213,13 @@ function Console({ view, onChangeView }) {
   const maneuverOverlay = useMemo(() => {
     if (!hasGlobePresence(selectedEvent)) return null
     const tracks = maneuver.result?.tracks
-    return tracks ? { tracks, colorHex: riskColorHex(selectedEvent) } : null
+    return tracks
+      ? {
+          tracks,
+          colorHex: riskColorHex(selectedEvent),
+          deltaVCmS: maneuver.result.delta_v_cm_s,
+        }
+      : null
   }, [selectedEvent, maneuver.result])
 
   // Where a selected LIVE event happens, for the globe's closest-approach
@@ -222,7 +228,12 @@ function Console({ view, onChangeView }) {
     if (!hasGlobePresence(selectedEvent)) return null
     const tcaMs = isoToMs(selectedEvent.tca_utc_iso)
     if (!Number.isFinite(tcaMs)) return null
-    return { id: selectedEvent.primary_id, tcaMs, colorHex: riskColorHex(selectedEvent) }
+    return {
+      id: selectedEvent.primary_id,
+      tcaMs,
+      colorHex: riskColorHex(selectedEvent),
+      missDistanceM: selectedEvent.miss_distance_m,
+    }
   }, [selectedEvent])
 
   const [focusRequest, setFocusRequest] = useState(null)

@@ -5,7 +5,7 @@ import { getEnvisatReplay } from '../api/conjunctions.js'
 import { screenCandidates } from '../api/physics.js'
 import { EVENT_ORIGIN } from '../lib/conjunctions.js'
 import { buildSatrec, propagateToGeodetic } from '../lib/geodetic.js'
-import { orbitTrackEcef } from '../lib/orbitTrack.js'
+import { orbitPointEcef, orbitTrackEcef } from '../lib/orbitTrack.js'
 import {
   PREDICTION_DAYS,
   PUBLISHED_TCA_UTC_ISO,
@@ -239,6 +239,15 @@ export function useEnvisatReplay() {
     return rec ? orbitTrackEcef(rec.satrec, when) : null
   }, [])
 
+  /**
+   * One object's position at `at`, in the frame of the rings drawn for
+   * `frameWhen` — where the closest-approach marker goes. Visualisation only.
+   */
+  const orbitPointFor = useCallback((id, at, frameWhen) => {
+    const rec = satrecsRef.current.find((r) => r.id === id)
+    return rec ? orbitPointEcef(rec.satrec, at, frameWhen) : null
+  }, [])
+
   // The countdown targets the TCA our own pipeline refined, not the published
   // one — the app should count down to the number it computed. The published
   // instant is displayed beside it for comparison, and is the fallback only
@@ -262,6 +271,7 @@ export function useEnvisatReplay() {
     secondaryId: SECONDARY_ID,
     propagateAll,
     orbitTrackFor,
+    orbitPointFor,
     reload,
   }
 }

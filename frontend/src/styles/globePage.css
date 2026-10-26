@@ -140,6 +140,13 @@
   max-height: 34vh;
 }
 
+/* On a shorter window the same third of the screen would leave no globe. */
+@media (max-height: 860px) {
+  .globe-page__float--strip:not([style*='height']) {
+    max-height: 28vh;
+  }
+}
+
 .globe-page__center {
   position: absolute;
   top: 0;

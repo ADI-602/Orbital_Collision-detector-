@@ -62,6 +62,25 @@
   pointer-events: none;
 }
 
+/* The centre group is one compact column — countdown and clock side by side,
+   the timeline under them — so it takes as little of the globe as it can. */
+.replay__center {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  width: min(600px, calc(100% - 2 * var(--rail-w) - 2 * var(--space-4)));
+  max-width: none;
+  align-items: stretch;
+}
+
+.replay__countdown .t-minus__value { white-space: nowrap; }
+
+.replay__topline {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
 .replay__clockbar {
   pointer-events: auto;
   display: flex;
@@ -209,4 +228,12 @@
    scroll. The globe sits higher (globePage.css), so this costs little of it. */
 .replay .globe-page__float--strip:not([style*='height']) {
   max-height: 40vh;
+}
+
+/* A shorter window cannot give the table that much without hiding the globe;
+   the table scrolls inside the card instead. */
+@media (max-height: 860px) {
+  .replay .globe-page__float--strip:not([style*='height']) {
+    max-height: 30vh;
+  }
 }

@@ -170,6 +170,13 @@ const RISK_LINE_HEX = { RED: '#f43f5e', YELLOW: '#fbbf24', GREEN: '#4ade80' }
 const UNKNOWN_LINE_HEX = '#71717a'
 
 /**
+ * Orbit colours by role in the pair, mirroring styles/tokens.css --orbit-*.
+ * They say which object an orbit belongs to, never how risky the event is —
+ * the hues are kept off the risk scale for exactly that reason.
+ */
+export const ORBIT_IDENTITY_HEX = { primary: '#60a5fa', secondary: '#c084fc' }
+
+/**
  * Pick the colour a globe highlight for this event should use. A co-orbital
  * or unassessable pair always renders in the neutral "unknown" colour — never
  * a risk colour — for the same reason RiskBadge never colours them: their Pc

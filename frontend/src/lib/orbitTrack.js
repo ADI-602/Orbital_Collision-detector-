@@ -52,17 +52,19 @@ import * as satellite from 'satellite.js'
  * Samples per revolution.
  *
  * The visible error of a polyline chord against the true arc is
- * R * (1 - cos(pi / N)); at N = 128 intervals and a LEO radius of 6800 km that
- * is about 2 km, far below one pixel at any usable globe zoom. Raising it buys
- * nothing and costs propagations on every refresh.
+ * R * (1 - cos(pi / N)). At 128 intervals that was about 2 km at LEO: invisible
+ * from orbit scale, but zoomed in on an encounter the ring visibly cut corners
+ * and pulled ~2 km away from the burn arc drawn beside it, which read as two
+ * different orbits. At 512 intervals it is ~130 m. The cost is 513
+ * propagations per ring four times a second, a few milliseconds.
  *
- * ODD ON PURPOSE. 128 intervals means 129 points, so the centre sample falls
+ * ODD ON PURPOSE. 512 intervals means 513 points, so the centre sample falls
  * exactly on `centreDate` and the marker is a point of the ring rather than up
- * to half a step (~170 km at LEO) away from the nearest one. An even count
+ * to half a step (~40 km at LEO) away from the nearest one. An even count
  * still looks right, but it stops being true that the marker is on its ring,
  * and that property is what the whole rendering rests on.
  */
-export const TRACK_SAMPLES = 129
+export const TRACK_SAMPLES = 513
 
 /** Plausible geocentric radius band, used only to reject nonsense. */
 const MIN_RADIUS_KM = 6000

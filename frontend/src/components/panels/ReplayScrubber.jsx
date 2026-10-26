@@ -45,6 +45,7 @@ function ReplayScrubber({ tcaMs, simMs, onSeek, tcaColorHex }) {
         <input
           type="range"
           className="replay-scrubber__range"
+          style={{ '--fill': `${(value / spanMinutes) * 100}%` }}
           min={0}
           max={spanMinutes}
           step={0.25}

@@ -6,12 +6,18 @@
  * highlight or one red risk dot actually carries meaning. Adding a second
  * decorative accent is what makes a console read as generic.
  *
- * Two colour systems live here and must never be mixed:
+ * Three colour systems live here and must never be mixed:
  *
  *   --accent-*  UI chrome only (active tab, CTA, selection, focus)
  *   --risk-*    semantic conjunction threat only
+ *   --orbit-*   which object an orbit belongs to (primary / secondary), on
+ *               the globe and in the swatches that act as its legend. Hues
+ *               chosen to sit outside the risk scale (no red, amber, green)
+ *               and apart from the teal accent.
  *
- * Never style chrome with a risk token, or risk with the accent.
+ * Never style chrome with a risk token, or risk with the accent. An orbit's
+ * colour says WHOSE it is; the event's risk lives on the badge, the TCA
+ * marker and the line joining the two objects.
  *
  * Type: sans (Inter) for all labels and prose; mono (JetBrains Mono) ONLY for
  * tabular numeric telemetry — coordinates, altitudes, clocks, NORAD IDs.
@@ -69,6 +75,11 @@
 
   --risk-unknown: #71717a;
   --risk-unknown-soft: rgba(113, 113, 122, 0.14);
+
+  /* Orbit identity (see the header). Mirrored as hex in lib/conjunctions.js
+     ORBIT_IDENTITY_HEX, because Cesium cannot read CSS custom properties. */
+  --orbit-primary: #60a5fa;
+  --orbit-secondary: #c084fc;
 
   /* --- Text ------------------------------------------------------------ */
   /* Every step clears 4.5:1 against the dark card fill, faint included. The

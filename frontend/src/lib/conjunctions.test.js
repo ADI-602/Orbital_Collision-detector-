@@ -19,6 +19,7 @@ import { describe, it, expect } from 'vitest'
 import {
   CO_ORBITAL_MAX_REL_SPEED_KM_S,
   EVENT_ORIGIN,
+  ORBIT_IDENTITY_HEX,
   classifyEncounter,
   eventKey,
   formatMissDistance,
@@ -35,6 +36,20 @@ import {
   splitTcaIso,
   unassessableEvent,
 } from './conjunctions.js'
+
+describe('ORBIT_IDENTITY_HEX', () => {
+  // An orbit's colour says whose it is. If it ever matched a risk colour, a
+  // viewer would read a threat level into an identity.
+  it('never reuses a risk colour', () => {
+    const riskColours = ['RED', 'YELLOW', 'GREEN'].map((level) =>
+      riskColorHex({ threat_level: level, pc: 1e-3, relative_speed_km_s: 10 }),
+    )
+    for (const hex of Object.values(ORBIT_IDENTITY_HEX)) {
+      expect(riskColours).not.toContain(hex)
+    }
+    expect(ORBIT_IDENTITY_HEX.primary).not.toBe(ORBIT_IDENTITY_HEX.secondary)
+  })
+})
 
 /**
  * Shaped exactly like the objects pushed at backend/api/main.py:227-234.

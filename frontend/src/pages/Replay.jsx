@@ -5,6 +5,7 @@ import ErrorState from '../components/common/ErrorState.jsx'
 import FloatingPanel from '../components/common/FloatingPanel.jsx'
 import LoadingState from '../components/common/LoadingState.jsx'
 import MoreDetails from '../components/common/MoreDetails.jsx'
+import OrbitSwatch from '../components/common/OrbitSwatch.jsx'
 import RiskBadge from '../components/common/RiskBadge.jsx'
 import Term from '../components/common/Term.jsx'
 import TMinus from '../components/common/TMinus.jsx'
@@ -213,8 +214,25 @@ function Replay({ view, onChangeView }) {
   // a few hundred metres across tens of thousands of kilometres — which is why
   // the panel draws the encounter to scale instead.
   const maneuverOverlay = maneuver.result?.tracks
-    ? { tracks: maneuver.result.tracks, colorHex: riskColorHex(headline) }
+    ? {
+        tracks: maneuver.result.tracks,
+        colorHex: riskColorHex(headline),
+        deltaVCmS: maneuver.result.delta_v_cm_s,
+      }
     : null
+
+  // Where the two drawn orbits meet, labelled with the pipeline's own miss
+  // distance. The label quotes the number; nothing is measured off the globe.
+  const replayPrimaryIdForMarker = replay.primaryId
+  const encounterMarker = useMemo(() => {
+    if (!headline || !Number.isFinite(tcaMs)) return null
+    return {
+      id: replayPrimaryIdForMarker,
+      tcaMs,
+      colorHex: riskColorHex(headline),
+      missDistanceM: headline.miss_distance_m,
+    }
+  }, [headline, tcaMs, replayPrimaryIdForMarker])
 
   return (
     <div className="globe-page replay">
@@ -227,6 +245,8 @@ function Replay({ view, onChangeView }) {
           highlightPair={highlightPair}
           orbitTrackFor={replay.orbitTrackFor}
           maneuverOverlay={maneuverOverlay}
+          encounterMarker={encounterMarker}
+          orbitPointFor={replay.orbitPointFor}
           simTimeFor={simTimeFor}
           clockKey={tcaMs}
           telemetryIntervalMs={100}
@@ -259,8 +279,16 @@ function Replay({ view, onChangeView }) {
 
         <div className="globe-page__field">
           {/* --- Centre: countdown and clock, over the globe ----------- */}
-          <div className="globe-page__center">
-            <div className="replay__countdown">
+          <div className="globe-page__center replay__center">
+            <div className="replay__topline">
+            <div
+              className="replay__countdown"
+              title={
+                tcaIsComputed
+                  ? 'Counting down to the TCA this pipeline refined.'
+                  : undefined
+              }
+            >
               <TMinus
                 targetMs={tcaMs}
                 mode="sim"
@@ -268,7 +296,7 @@ function Replay({ view, onChangeView }) {
                 label="Closest approach"
                 note={
                   tcaIsComputed
-                    ? 'Counting down to the TCA this pipeline refined.'
+                    ? undefined
                     : 'Counting down to the published TCA — screening has not returned one yet.'
                 }
               />
@@ -302,6 +330,7 @@ function Replay({ view, onChangeView }) {
                   after, looping
                 </span>
               </div>
+            </div>
             </div>
 
             <ReplayScrubber
@@ -405,10 +434,12 @@ function Replay({ view, onChangeView }) {
                 <div className="replay__headline">
                   <div className="replay__pair">
                     <span className="replay__pair-primary">
+                      <OrbitSwatch role="primary" />
                       {headline.primary_name ?? pair?.primaryName ?? 'ENVISAT'}
                     </span>
                     <span className="replay__pair-arrow" aria-hidden="true">↔</span>
                     <span className="replay__pair-secondary">
+                      <OrbitSwatch role="secondary" />
                       {headline.secondary_name ?? pair?.secondaryName ?? 'ZENITH-2 DEBRIS'}
                     </span>
                   </div>

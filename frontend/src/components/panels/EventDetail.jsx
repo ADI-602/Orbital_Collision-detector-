@@ -1,4 +1,5 @@
 import MoreDetails from '../common/MoreDetails.jsx'
+import OrbitSwatch from '../common/OrbitSwatch.jsx'
 import RiskBadge from '../common/RiskBadge.jsx'
 import Term from '../common/Term.jsx'
 import TMinus from '../common/TMinus.jsx'
@@ -78,9 +79,15 @@ function EventDetail({ event, onOpenReplay, onShowOnGlobe }) {
       <div className="event-detail">
         <div className="event-detail__head">
           <div className="event-detail__pair">
-            <span className="event-detail__primary">{event.primary_name ?? 'Primary'}</span>
+            <span className="event-detail__primary">
+              <OrbitSwatch role="primary" />
+              {event.primary_name ?? 'Primary'}
+            </span>
             <span className="event-detail__arrow" aria-hidden="true">↔</span>
-            <span className="event-detail__secondary">{event.secondary_name}</span>
+            <span className="event-detail__secondary">
+              <OrbitSwatch role="secondary" />
+              {event.secondary_name}
+            </span>
           </div>
           <RiskBadge label="Not assessed" />
         </div>
@@ -108,9 +115,15 @@ function EventDetail({ event, onOpenReplay, onShowOnGlobe }) {
     <div className="event-detail">
       <div className="event-detail__head">
         <div className="event-detail__pair">
-          <span className="event-detail__primary">{event.primary_name ?? 'Primary'}</span>
+          <span className="event-detail__primary">
+              <OrbitSwatch role="primary" />
+              {event.primary_name ?? 'Primary'}
+            </span>
           <span className="event-detail__arrow" aria-hidden="true">↔</span>
-          <span className="event-detail__secondary">{event.secondary_name}</span>
+          <span className="event-detail__secondary">
+              <OrbitSwatch role="secondary" />
+              {event.secondary_name}
+            </span>
         </div>
         <div className="event-detail__tags">
           {coOrbital ? <RiskBadge label="Co-orbital" /> : <RiskBadge level={event.threat_level} />}
