@@ -1,0 +1,121 @@
+/* Layout: styles/globePage.css. This file holds only the console's content. */
+
+.console__hud { pointer-events: auto; align-items: center; }
+
+.console__hud-label { color: var(--text-dim); }
+
+.console__hud-speed.is-live {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.console__hud-toggle {
+  padding: 2px var(--space-3);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.console__hud-clock {
+  font-size: var(--fs-caption);
+}
+
+.console__hud-speed {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The tracked-object count: one big readout instead of a ring gauge. */
+.console__count {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.console__count-value {
+  font-size: var(--fs-num-lg);
+  line-height: 1.1;
+  color: var(--accent);
+}
+
+.console__count-unit {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.console__count-note {
+  margin: var(--space-1) 0 var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.console__count-note.is-degraded {
+  color: var(--risk-watch);
+}
+
+.console__feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Long group lists ellipsise; the full list is in the row's tooltip. */
+.console__feed-val {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.console__feed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.console__feed-key {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+}
+
+.console__feed-val {
+  font-size: var(--fs-caption);
+}
+
+/* Degraded-feed notice sits under the feed rows, not instead of them: the
+   provenance and the reason should be readable together. */
+.console__feed-degraded {
+  margin-top: var(--space-3);
+}
+
+.console__feed-degraded .error-state {
+  padding: var(--space-3);
+}
+
+.console__feed-degraded .error-state__detail {
+  font-size: var(--fs-label);
+}

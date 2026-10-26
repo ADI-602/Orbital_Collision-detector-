@@ -1,0 +1,45 @@
+.pill-stat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--card-fill);
+}
+
+.pill-stat__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--card-fill-strong);
+  color: var(--accent);
+  flex: none;
+}
+
+.pill-stat__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pill-stat__label {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.pill-stat__value {
+  font-size: var(--fs-caption);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.pill-stat--nominal .pill-stat__icon { color: var(--risk-nominal); }
+.pill-stat--critical .pill-stat__icon { color: var(--risk-critical); }
+.pill-stat--dim .pill-stat__icon { color: var(--text-dim); }

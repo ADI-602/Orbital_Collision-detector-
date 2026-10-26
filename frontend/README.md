@@ -1,16 +1,18 @@
-# React + Vite
+# frontend/
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + Vite + CesiumJS console for Orbital Risk Advisor. Plain per-component CSS, vitest, oxlint.
+Every number on screen comes from the backend; the browser propagates objects (satellite.js, SGP4) for
+display only. The structure and data flow are described in `docs/frontend-implementation-plan.md` §16.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev          # http://localhost:5173 (expects the API on :8000)
+npm test             # vitest
+npm run lint         # oxlint
+npm run build
+npm run check:api    # probe a running backend
+npm run refresh:tle  # refresh the bundled TLE snapshot
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Pages: `src/pages/Console.jsx` (live) and `src/pages/Replay.jsx` (Envisat 2004 proof). Presenting setup
+and the demo flow: `demo/presentation_guide.md`.

@@ -1,0 +1,114 @@
+.asset-strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.asset-strip__tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.asset-strip__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--card-fill);
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    color: var(--text-secondary);
+    background: var(--card-fill-strong);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.asset-strip__tab.is-active {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 500;
+}
+
+.asset-strip__count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-micro);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.asset-strip__cards {
+  display: flex;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+}
+
+.asset-strip__empty {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-faint);
+  padding: var(--space-3) 0;
+}
+
+.asset-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 190px;
+  padding: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-inner);
+  background: var(--card-fill);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    background: var(--card-fill-strong);
+    border-color: var(--card-border-hover);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.asset-card.is-selected {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.asset-card__name {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.asset-card__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-micro);
+}
+
+.asset-card__norad { color: var(--text-faint); }
+.asset-card__alt { color: var(--accent); }

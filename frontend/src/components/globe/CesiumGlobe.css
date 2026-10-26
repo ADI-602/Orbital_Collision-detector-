@@ -1,0 +1,35 @@
+.cesium-globe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Cesium injects its own widget markup; tone it down to match the console
+   rather than letting the stock blue/grey chrome show through. */
+.cesium-globe .cesium-viewer,
+.cesium-globe .cesium-widget,
+.cesium-globe .cesium-widget canvas {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+/* Attribution must remain visible (Cesium and Natural Earth both require it),
+   so it is de-emphasised rather than removed. */
+.cesium-globe .cesium-widget-credits,
+.cesium-globe .cesium-credit-lightbox-overlay {
+  font-family: var(--font-sans);
+  font-size: 9px;
+  color: var(--text-faint);
+}
+
+.cesium-globe .cesium-widget-credits a {
+  color: var(--text-faint);
+  text-decoration: none;
+}
+
+/* Cesium's default focus ring is a thick blue outline that clashes badly. */
+.cesium-globe .cesium-widget canvas:focus {
+  outline: none;
+}

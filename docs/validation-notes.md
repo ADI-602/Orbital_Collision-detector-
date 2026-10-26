@@ -128,7 +128,7 @@ C_RTN = diag(σ_U², σ_V², σ_W²)   [km²]
 ```
 The diagonal approximation is conservative: omitting the U-V drag correlation
 slightly overestimates uncertainty in the B-plane → biases Pc upward, which is
-the safe direction per JSpOC practice and `bob.md §1.4`.
+the safe direction per JSpOC practice.
 
 **Step 3 — Rotate to ECI at TCA** using the standard RTN → ECI rotation:
 - R-hat (radial)     = pos_eci / |pos_eci|
@@ -157,7 +157,7 @@ hardcoded. Shown here as examples to verify the function gives expected results:
 - i ≈ 65–72° → i > 60° class,  e ≈ 0.001 → e ≤ 0.1 class
 - **Lookup result:** σ_U = 104 m, σ_V = 556 m, σ_W = 139 m
 
-**Cosmos 2221 (secondary demo, i ≈ 82.5°, H ≈ 960 km):**
+**Cosmos 2221 (planned secondary demo — not built; see `implementation-checklist.md`, i ≈ 82.5°, H ≈ 960 km):**
 - H_pe > 800 km → falls outside the near-circular LEO portion of Table 1
 - Fallback: use the most conservative row (i > 60°) with a documented note
   that the lookup is extrapolated — better than a silent failure
@@ -182,6 +182,14 @@ For the Envisat demo: R_c = 13.0 + 1.5 = **14.5 m = 0.0145 km** (Envisat +
 debris fragment). For a generic unknown-size object pair, the caller supplies
 R_c or uses a conservative default.
 
+**As shipped (2026-10-26).** `compute_pc()` takes R_c as a parameter, as above. But the API layer passes
+one constant, `HARD_BODY_RADIUS_KM = 0.0145` (`backend/api/assessment.py`; the maneuver default is the same),
+for **every** pair, live or historical. The size table above is a reference for a future per-object
+radius; no code reads it. Each event echoes the value it used as `hard_body_radius_m`, and the UI states
+it next to the Pc, so the assumption is visible rather than implicit. For a pair of small debris
+fragments 14.5 m is far larger than the real combined radius, so those Pc values are an upper-end
+statement, not a best estimate.
+
 ### 2.8 Summary
 
 | What                       | Approach                                                      | Hardcoded? |
@@ -189,7 +197,7 @@ R_c or uses a conservative default.
 | Covariance assignment      | ESA SDC4 Table 1 class lookup from orbital elements           | **No** — function of TLE parameters |
 | Off-diagonal terms         | Omitted (diagonal only) — conservative overestimate           | N/A        |
 | RTN → ECI rotation         | Computed from object's state vector at TCA                    | **No** — computed per call |
-| Hard-body radius R_c       | Passed in by caller; size table provides defaults by type     | **No** — parameter |
+| Hard-body radius R_c       | `compute_pc()` takes it as a parameter; the API passes one 14.5 m constant for every pair | **No** in the physics function; **yes** at the API layer (shown in the UI) |
 | Envisat-specific values    | Example output of the general lookup, not a special case      | —          |
 
 ---
@@ -353,6 +361,18 @@ Validated on 2026-08-20 via `pytest tests/test_envisat_replay.py`:
 All 4 prediction days pass test assertions. Refined TCA: 2004-10-22 05:10:37 UTC (within 2s of published 05:10:35 UTC).
 
 ---
+
+### 4.5 Live known-answer check (added 2026-10-26)
+
+The same two validation cases now also run inside the API process, so a running system can show that it
+still reproduces them: `GET /api/validation/status` (`backend/api/validation.py`) re-runs the Alfano case
+(Pc 0.10034, tolerance 0.001) and the four Envisat prediction days, judged by the regression tests' own
+fixtures and bounds, never looser. The console's header **Validated** badge reads it.
+
+Measured through that endpoint on 2026-10-26 (12 h window from 2004-10-22T00:00Z, 50 km threshold):
+329.1 / 234.1 / 151.8 / 268.9 m and Pc 2.74e-4 / 1.11e-3 / 1.93e-3 / 6.59e-4, TCA 05:10:37Z. The
+sub-metre differences from the table in 4.4 come from the search window, not the physics. This
+supplements the pytest suite; it does not replace it.
 
 ## 5. Pc Formula Reference
 

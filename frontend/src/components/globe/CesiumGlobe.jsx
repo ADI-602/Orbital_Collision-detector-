@@ -1,0 +1,803 @@
+import { useEffect, useRef } from 'react'
+import * as Cesium from 'cesium'
+
+import { ORBIT_IDENTITY_HEX, formatMissDistance } from '../../lib/conjunctions.js'
+import { alignTrackToInstant, formatDeltaV } from '../../lib/maneuver.js'
+import { markerImage, markerPixelSize } from '../../lib/markerImage.js'
+import { OBJECT_KIND } from '../../lib/objectType.js'
+import { computeSimTime, DEFAULT_SPEED_MULTIPLIER } from '../../lib/simClock.js'
+import './CesiumGlobe.css'
+
+/**
+ * CesiumGlobe — the console's hero view: a freely rotatable Earth with real
+ * tracked objects in their real orbits.
+ *
+ * Rendering is driven imperatively from a requestAnimationFrame loop rather
+ * than from React state, because re-rendering the tree 60x/second to move a
+ * marker would be wasteful. React only hears about it on a throttle, via
+ * `onTelemetry`, which feeds the HUD readouts.
+ *
+ * See useLiveSatellites.js for the boundary note: these positions are an
+ * ambient visualisation, never an input to the physics pipeline.
+ *
+ * @param {object} props
+ * @param {(when: Date) => Array<object>} props.propagateAll
+ * @param {number} props.satelliteCount           re-seeds entities when the set loads
+ * @param {number} [props.speedMultiplier]
+ * @param {(t: {simTime: Date, satellites: Array<object>}) => void} [props.onTelemetry]
+ * @param {(id: string | null) => void} [props.onSelect]
+ * @param {string | null} [props.selectedId]
+ * @param {{primaryId: string, secondaryId: string, colorHex: string} | null} [props.highlightPair]
+ *   the two objects of the currently selected conjunction event, and the
+ *   colour to draw them in — see lib/conjunctions.js riskColorHex(). On the
+ *   live console only a LIVE event supplies this (see hasGlobePresence());
+ *   the replay view always supplies its one pair.
+ * @param {((id: string, when: Date) => Array<{x: number, y: number, z: number}>|null) | null} [props.orbitTrackFor]
+ *   one revolution of an object's orbit in Earth-fixed km, for the instant
+ *   being drawn — see lib/orbitTrack.js. Supplied by whichever hook owns the
+ *   element sets. Rings are drawn for the highlighted pair and, failing that,
+ *   the selected object; null means that object gets no ring.
+ * @param {{tracks: object, colorHex: string} | null} [props.maneuverOverlay]
+ *   the flown and unflown arcs for a simulated burn, straight from
+ *   /api/physics/maneuver. Drawn for context — at orbit scale the two arcs are
+ *   the same line, and the burn's actual effect is shown to scale in
+ *   ManeuverPanel. See lib/maneuver.js.
+ * @param {((elapsedRealMs: number) => Date) | null} [props.simTimeFor]
+ *   overrides which instant is drawn. The live console leaves this null and
+ *   gets a clock that starts now and runs forward at `speedMultiplier`; the
+ *   Envisat replay supplies a clock that sweeps a fixed window in 2004 and
+ *   wraps (lib/replay.js replaySimTime). Positions are propagated by SGP4 for
+ *   whatever instant comes back, so the override changes WHICH instants are
+ *   sampled and nothing else.
+ * @param {string|number} [props.clockKey] restarts the clock when it changes —
+ *   the replay passes its TCA, which is not known on the first render.
+ * @param {number} [props.telemetryIntervalMs] how often React hears about the
+ *   clock. The default is deliberately coarse; the replay lowers it because a
+ *   countdown refreshed only four times a second visibly stutters.
+ * @param {{id: string, tcaMs: number, colorHex: string, missDistanceM?: number} | null} [props.encounterMarker]
+ *   mark where the selected conjunction happens: object `id`'s position at
+ *   its TCA, drawn in the same frame as the rings (lib/orbitTrack.js
+ *   orbitPointEcef), so the marker sits where the two drawn orbits cross and
+ *   turns with them. A picture of the geometry from the same element set and
+ *   propagator as the rings. Its label quotes `missDistanceM`, the pipeline's
+ *   figure; nothing is measured off the drawing.
+ * @param {((id: string, at: Date, frameWhen: Date) => {x: number, y: number, z: number}|null) | null} [props.orbitPointFor]
+ *   supplies that position, km ECEF; from whichever hook owns the element sets.
+ * @param {{nonce: number, objectId?: string} | null} [props.focusRequest]
+ *   fly the camera to a tracked object's marker (`objectId`) or, without one,
+ *   to the encounter marker. A new `nonce` repeats the flight.
+ * @param {{longitude_deg: number, latitude_deg: number} | null} [props.initialView]
+ *   where to point the camera, applied once per distinct location (to ~0.1°)
+ *   so it never fights a viewer who has since dragged the globe. The replay
+ *   uses it to open over the encounter instead of wherever the default view
+ *   happens to be.
+ */
+/**
+ * Marker colours. Neutral by default so the risk palette keeps its meaning:
+ * on this globe a coloured marker means an assessed conjunction, and nothing
+ * else. Object TYPE is carried by shape (lib/objectType.js), never by colour.
+ */
+const MARKER_DEFAULT_HEX = '#c8c8d0'
+const MARKER_SELECTED_HEX = '#5fd9d0'
+
+/**
+ * Labels are drawn for at most this many objects at once.
+ *
+ * A tracked set of several hundred debris fragments produces several hundred
+ * overlapping labels — illegible, and text is by far the most expensive thing
+ * Cesium draws per entity. So labels are reserved for the objects a viewer is
+ * actually being pointed at: the selected object and the two members of a
+ * highlighted conjunction. Everything else is a shape until you click it.
+ */
+const LABELLED_ONLY = true
+
+/**
+ * How often the orbit rings are re-sampled, in milliseconds of REAL time.
+ *
+ * Each ring costs 129 SGP4 propagations and at most three exist at once, so
+ * 4 Hz is ~1,500 propagations a second — nothing. Doing it per frame at 60 Hz
+ * would not be. Between refreshes the ring is stale by at most 250 ms x the
+ * speed multiplier of orbital motion, which at the default x120 is a marker
+ * displacement of well under a pixel at any usable zoom.
+ */
+const TRACK_REFRESH_MS = 250
+
+/** Camera altitude for the default and any requested view. */
+const CAMERA_HEIGHT_M = 24_000_000
+
+/** Closer than the default, so a flown-to point sits large in frame. */
+const FOCUS_HEIGHT_M = 12_000_000
+const FOCUS_FLIGHT_S = 1.5
+
+/** Entity id for the closest-approach marker; never a tracked-object id. */
+const ENCOUNTER_ENTITY_ID = 'encounter-point'
+
+/** Entity id for the start of a simulated burn's flown arc. */
+const BURN_ENTITY_ID = 'burn-point'
+
+/** Ring opacity: present enough to read, faint enough not to fight the markers. */
+const TRACK_ALPHA = 0.85
+const TRACK_DEPTH_FAIL_ALPHA = 0.28
+
+/**
+ * Point the camera at a requested location, once per distinct location.
+ *
+ * @param {Cesium.Viewer | null} viewer
+ * @param {{longitude_deg: number, latitude_deg: number} | null} view
+ * @param {{current: string | null}} appliedRef
+ */
+function applyInitialView(viewer, view, appliedRef) {
+  if (!viewer || viewer.isDestroyed() || !view) return
+  const { longitude_deg: lon, latitude_deg: lat } = view
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return
+  const key = `${lon.toFixed(1)},${lat.toFixed(1)}`
+  if (appliedRef.current === key) return
+  appliedRef.current = key
+  viewer.camera.setView({ destination: Cesium.Cartesian3.fromDegrees(lon, lat, CAMERA_HEIGHT_M) })
+}
+
+function CesiumGlobe({
+  propagateAll,
+  satelliteCount,
+  speedMultiplier = DEFAULT_SPEED_MULTIPLIER,
+  onTelemetry,
+  onSelect,
+  selectedId = null,
+  highlightPair = null,
+  orbitTrackFor = null,
+  maneuverOverlay = null,
+  simTimeFor = null,
+  clockKey = 'live',
+  telemetryIntervalMs = 250,
+  initialView = null,
+  encounterMarker = null,
+  orbitPointFor = null,
+  focusRequest = null,
+}) {
+  const containerRef = useRef(null)
+  const viewerRef = useRef(null)
+  const entitiesRef = useRef(new Map())
+
+  // Props the animation loop reads. Held in refs so the loop never needs to be
+  // torn down and rebuilt (which would destroy and recreate the viewer).
+  const propagateRef = useRef(propagateAll)
+  propagateRef.current = propagateAll
+  const speedRef = useRef(speedMultiplier)
+  speedRef.current = speedMultiplier
+  const telemetryRef = useRef(onTelemetry)
+  telemetryRef.current = onTelemetry
+  const selectRef = useRef(onSelect)
+  selectRef.current = onSelect
+  const selectedRef = useRef(selectedId)
+  selectedRef.current = selectedId
+  const highlightRef = useRef(highlightPair)
+  highlightRef.current = highlightPair
+  const orbitTrackForRef = useRef(orbitTrackFor)
+  orbitTrackForRef.current = orbitTrackFor
+  const maneuverRef = useRef(maneuverOverlay)
+  maneuverRef.current = maneuverOverlay
+  const simTimeForRef = useRef(simTimeFor)
+  simTimeForRef.current = simTimeFor
+  const telemetryIntervalRef = useRef(telemetryIntervalMs)
+  telemetryIntervalRef.current = telemetryIntervalMs
+  const initialViewRef = useRef(initialView)
+  initialViewRef.current = initialView
+  const appliedViewRef = useRef(null)
+  const encounterMarkerRef = useRef(encounterMarker)
+  encounterMarkerRef.current = encounterMarker
+  const orbitPointForRef = useRef(orbitPointFor)
+  orbitPointForRef.current = orbitPointFor
+  // { entity, key, position } for the closest-approach marker, or null.
+  const encounterEntityRef = useRef(null)
+  const burnEntityRef = useRef(null)
+  const burnPointRef = useRef(null)
+  const linkEntityRef = useRef(null)
+  // Read by the polyline's CallbackProperty every frame; see the tick below.
+  const linkPositionsRef = useRef([])
+  const linkColorRef = useRef(null)
+  // id -> { entity, holder: {points}, colorHex }. `holder` is what each ring's
+  // CallbackProperty closes over, so the entity is built once and its geometry
+  // is swapped by mutating the holder — same reason as the link line below.
+  const trackEntitiesRef = useRef(new Map())
+
+  // --- Viewer lifecycle: created once, destroyed on unmount ---------------
+  useEffect(() => {
+    let disposed = false
+    let handler = null
+    // Captured here rather than read off the ref during cleanup: the Map
+    // identity is stable for the component's life, and the local binding is
+    // what the exhaustive-deps rule wants to see.
+    const entities = entitiesRef.current
+    const tracks = trackEntitiesRef.current
+
+    const init = async () => {
+      const token = import.meta.env?.VITE_CESIUM_ION_TOKEN
+
+      /** @type {Cesium.Viewer.ConstructorOptions} */
+      const options = {
+        // Cesium's stock chrome is a toolbar-heavy look that fights the
+        // console design. The only UI over the globe is our own HUD.
+        baseLayerPicker: false,
+        timeline: false,
+        animation: false,
+        geocoder: false,
+        homeButton: false,
+        sceneModePicker: false,
+        navigationHelpButton: false,
+        fullscreenButton: false,
+        infoBox: false,
+        selectionIndicator: false,
+        // Attribution stays (Cesium/Natural Earth require it); it is styled
+        // down in CSS rather than removed.
+        creditContainer: undefined,
+      }
+
+      if (token) {
+        Cesium.Ion.defaultAccessToken = token
+      } else {
+        // No Ion token: fall back to the offline Natural Earth II tiles that
+        // ship inside the cesium package. Lower resolution, but the globe
+        // works with zero network dependency — which also means a demo on
+        // bad conference wifi still renders.
+        const provider = await Cesium.TileMapServiceImageryProvider.fromUrl(
+          Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
+        )
+        if (disposed) return
+        options.baseLayer = new Cesium.ImageryLayer(provider)
+        options.terrainProvider = new Cesium.EllipsoidTerrainProvider()
+      }
+
+      if (disposed || !containerRef.current) return
+
+      const viewer = new Cesium.Viewer(containerRef.current, options)
+      viewerRef.current = viewer
+
+      // Space should read as black, not as Cesium's default blue skybox glow.
+      viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#050505')
+      viewer.scene.skyAtmosphere.show = true
+      viewer.scene.globe.enableLighting = true
+      viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#0a0f18')
+      viewer.scene.moon.show = false
+
+      // Close enough that Earth fills most of the stage, far enough that a
+      // whole LEO orbit stays in frame as objects sweep around the limb.
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(10, 15, CAMERA_HEIGHT_M),
+      })
+      // A requested view that arrived before the viewer existed.
+      applyInitialView(viewer, initialViewRef.current, appliedViewRef)
+
+      // Click-to-select. Cesium hands back the picked entity; we translate to
+      // our own id so React state never holds a Cesium object.
+      handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas)
+      handler.setInputAction((movement) => {
+        const picked = viewer.scene.pick(movement.position)
+        // A billboard pick reports its Entity on `.id`; the entity's own id is
+        // the tracked-set id we handed it. Anything else deselects.
+        //
+        // Membership of the marker map is the test, not "is it a string": the
+        // conjunction chord and the orbit rings are pickable entities too, and
+        // Cesium gives an entity added without an id an auto-generated GUID —
+        // also a string. Clicking a line would otherwise select an object id
+        // that does not exist, which empties the selected-object panel instead
+        // of doing nothing.
+        const id = picked?.id?.id
+        const isTrackedObject = typeof id === 'string' && entities.has(id)
+        selectRef.current?.(isTrackedObject ? id : null)
+      }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
+    }
+
+    init().catch((err) => {
+      // A failed globe must not take down the console around it.
+      console.error('Cesium viewer failed to initialise:', err)
+    })
+
+    return () => {
+      disposed = true
+      handler?.destroy()
+      entities.clear()
+      tracks.clear()
+      linkEntityRef.current = null
+      linkColorRef.current = null
+      encounterEntityRef.current = null
+      burnEntityRef.current = null
+      const viewer = viewerRef.current
+      viewerRef.current = null
+      if (viewer && !viewer.isDestroyed()) viewer.destroy()
+    }
+  }, [])
+
+  // A requested view that arrives (or moves) after the viewer exists.
+  const viewLon = initialView?.longitude_deg
+  const viewLat = initialView?.latitude_deg
+  useEffect(() => {
+    applyInitialView(viewerRef.current, initialViewRef.current, appliedViewRef)
+  }, [viewLon, viewLat])
+
+  // Fly to a tracked object's marker, or to the closest-approach marker,
+  // where it stands now. Reduced-motion users get a cut, not a flight.
+  const focusNonce = focusRequest?.nonce ?? null
+  const focusRef = useRef(focusRequest)
+  focusRef.current = focusRequest
+  useEffect(() => {
+    const viewer = viewerRef.current
+    if (focusNonce === null || !viewer || viewer.isDestroyed()) return
+    const objectId = focusRef.current?.objectId
+    const position = objectId
+      ? entitiesRef.current.get(objectId)?.position?.getValue(Cesium.JulianDate.now())
+      : encounterEntityRef.current?.position
+    if (!position) return
+    const carto = Cesium.Cartographic.fromCartesian(position)
+    if (!carto) return
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, FOCUS_HEIGHT_M),
+      duration: reduceMotion ? 0 : FOCUS_FLIGHT_S,
+    })
+  }, [focusNonce])
+
+  // --- Animation loop: propagate and move markers -------------------------
+  useEffect(() => {
+    let frame = 0
+    let lastPush = 0
+    let lastTrackRefresh = 0
+    const startedAtReal = performance.now()
+    const simBase = new Date()
+
+    /**
+     * Which objects should be wearing an orbit ring, and how it is drawn.
+     *
+     * Each member of a conjunction gets its own identity colour
+     * (styles/tokens.css --orbit-*): primary solid, secondary dashed, so the
+     * two read apart by colour AND by dash for colour-blind viewers. The
+     * event's risk colour stays on the TCA marker and the line joining the
+     * pair. An object selected on its own gets the accent colour, which is
+     * chrome (selection), never a risk token.
+     */
+    const wantedTracks = () => {
+      const wanted = new Map()
+      const highlight = highlightRef.current
+
+      if (highlight?.primaryId) {
+        wanted.set(highlight.primaryId, { colorHex: ORBIT_IDENTITY_HEX.primary, dashed: false })
+      }
+      if (highlight?.secondaryId && !wanted.has(highlight.secondaryId)) {
+        wanted.set(highlight.secondaryId, { colorHex: ORBIT_IDENTITY_HEX.secondary, dashed: true })
+      }
+
+      const selected = selectedRef.current
+      if (selected && !wanted.has(selected)) {
+        wanted.set(selected, { colorHex: MARKER_SELECTED_HEX, dashed: false })
+      }
+      return wanted
+    }
+
+    /**
+     * The flown arc of a simulated burn, from the burn to just past TCA.
+     *
+     * Only the flown arc is drawn. The unflown one runs within a few hundred
+     * metres of it across tens of thousands of kilometres, so at globe scale
+     * the two are the same line, and drawing both made a confusing double band
+     * beside the orbit ring. The unflown path IS the primary's orbit ring,
+     * which is already on screen. ManeuverPanel draws the encounter to scale,
+     * where the difference is actually visible.
+     *
+     * The arc is in the accent: a planned burn is a proposed action, which is
+     * chrome, not a threat level. Its first point gets a labelled "Burn"
+     * marker (see syncBurnMarker), stashed in burnPointRef.
+     *
+     * Returns Cartesian3 arrays keyed like the orbit rings, so one upsert loop
+     * serves both.
+     */
+    const wantedManeuverArcs = (simTime) => {
+      burnPointRef.current = null
+      const overlay = maneuverRef.current
+      const tracks = overlay?.tracks
+      const times = tracks?.sample_utc_iso
+      if (!tracks || !Array.isArray(times) || times.length < 2) return new Map()
+
+      const aligned = alignTrackToInstant(tracks.post_burn_pos_ecef_km, times, simTime)
+      if (!aligned) return new Map()
+      const post = aligned.map((p) => new Cesium.Cartesian3(p.x * 1000, p.y * 1000, p.z * 1000))
+
+      // Draw from the burn onwards; before it the flown path is the orbit ring.
+      const burnIndex = Number.isInteger(tracks.burn_sample_index)
+        ? Math.min(Math.max(tracks.burn_sample_index, 0), post.length - 2)
+        : 0
+      const flown = post.slice(burnIndex)
+
+      burnPointRef.current = {
+        position: flown[0],
+        text: `Burn ${formatDeltaV(overlay.deltaVCmS)}`,
+      }
+
+      return new Map([
+        ['maneuver:post', { colorHex: MARKER_SELECTED_HEX, dashed: false, width: 2.5, positions: flown }],
+      ])
+    }
+
+    /**
+     * Place, move or remove one labelled point marker held in `slotRef`.
+     * `spec` null removes it; a changed `spec.key` rebuilds it; otherwise only
+     * the position moves.
+     */
+    const syncPointMarker = (viewer, slotRef, entityId, spec) => {
+      const current = slotRef.current
+      if (current && (!spec || current.key !== spec.key)) {
+        viewer.entities.remove(current.entity)
+        slotRef.current = null
+      }
+      if (!spec) return
+
+      if (slotRef.current) {
+        slotRef.current.entity.position = spec.position
+        slotRef.current.position = spec.position
+        return
+      }
+
+      const color = Cesium.Color.fromCssColorString(spec.colorHex)
+      const entity = viewer.entities.add({
+        id: entityId,
+        position: spec.position,
+        point: {
+          pixelSize: 11,
+          color: color.withAlpha(0.35),
+          outlineColor: color,
+          outlineWidth: 2,
+        },
+        label: {
+          text: spec.text,
+          font: '600 13px Inter, system-ui, sans-serif',
+          fillColor: Cesium.Color.fromCssColorString('#f4f4f5'),
+          showBackground: true,
+          backgroundColor: Cesium.Color.fromCssColorString('rgba(5,5,5,0.75)'),
+          backgroundPadding: new Cesium.Cartesian2(6, 4),
+          pixelOffset: new Cesium.Cartesian2(0, -16),
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+        },
+      })
+      slotRef.current = { entity, key: spec.key, position: spec.position }
+    }
+
+    /**
+     * The closest-approach marker for the drawn instant, labelled with the
+     * pipeline's miss distance. Re-placed on the ring cadence, because the
+     * frame it is drawn in turns with the clock exactly as the rings do.
+     */
+    const syncEncounterMarker = (viewer, simTime) => {
+      const marker = encounterMarkerRef.current
+      // No usable element set: no marker, rather than one in a guessed place.
+      const point = marker
+        ? orbitPointForRef.current?.(marker.id, new Date(marker.tcaMs), simTime)
+        : null
+      if (!marker || !point) {
+        syncPointMarker(viewer, encounterEntityRef, ENCOUNTER_ENTITY_ID, null)
+        return
+      }
+      const miss = Number.isFinite(marker.missDistanceM)
+        ? ` · ${formatMissDistance(marker.missDistanceM)} miss`
+        : ''
+      const text = `Closest approach (TCA)${miss}`
+      syncPointMarker(viewer, encounterEntityRef, ENCOUNTER_ENTITY_ID, {
+        key: `${marker.id}|${marker.tcaMs}|${marker.colorHex}|${text}`,
+        // km from the physics-facing modules, metres for Cesium.
+        position: new Cesium.Cartesian3(point.x * 1000, point.y * 1000, point.z * 1000),
+        colorHex: marker.colorHex,
+        text,
+      })
+    }
+
+    /** Where the simulated burn happens, on its flown arc (set by wantedManeuverArcs). */
+    const syncBurnMarker = (viewer) => {
+      const burn = burnPointRef.current
+      syncPointMarker(
+        viewer,
+        burnEntityRef,
+        BURN_ENTITY_ID,
+        burn ? { key: burn.text, position: burn.position, colorHex: MARKER_SELECTED_HEX, text: burn.text } : null,
+      )
+    }
+
+    const removeTrack = (viewer, id) => {
+      const track = trackEntitiesRef.current.get(id)
+      if (!track) return
+      viewer.entities.remove(track.entity)
+      trackEntitiesRef.current.delete(id)
+    }
+
+    /**
+     * Draw one revolution of each wanted object's orbit.
+     *
+     * The ring is the marker's own path: lib/orbitTrack.js samples the same
+     * element set with the same propagator and rotates every sample by the
+     * instant's GMST, which is what puts the marker exactly on its ring. A null
+     * from the sampler means that object has no usable element set, and it gets
+     * NO ring — never a partial arc, which would read as an orbit that stops in
+     * mid-air.
+     *
+     * Entities are created once and their geometry swapped through the holder a
+     * CallbackProperty closes over, for the reason documented at the link line
+     * below: reassigning `polyline.positions` invalidates the geometry every
+     * frame and the primitive never finishes building, so the line silently
+     * never draws.
+     */
+    const syncOrbitTracks = (viewer, simTime) => {
+      const wanted = wantedTracks()
+      for (const [key, arc] of wantedManeuverArcs(simTime)) wanted.set(key, arc)
+
+      const tracks = trackEntitiesRef.current
+      const sampler = orbitTrackForRef.current
+
+      for (const [id, style] of wanted) {
+        // A maneuver arc arrives with its geometry already built; an orbit ring
+        // is sampled here from the object's own element set.
+        let positions = style.positions
+        if (!positions) {
+          const points = sampler?.(id, simTime)
+          if (!points || points.length < 2) {
+            removeTrack(viewer, id)
+            continue
+          }
+          // km from the physics-facing modules, metres for Cesium. Named
+          // explicitly because a silent factor of 1000 here would draw a ring
+          // inside the planet.
+          positions = points.map(
+            (p) => new Cesium.Cartesian3(p.x * 1000, p.y * 1000, p.z * 1000),
+          )
+        }
+        if (positions.length < 2) {
+          removeTrack(viewer, id)
+          continue
+        }
+
+        const styleKey = `${style.colorHex}|${style.dashed}|${style.width ?? 1.8}`
+        let track = tracks.get(id)
+        if (track && track.styleKey !== styleKey) {
+          // Solid and dashed are different material types, so a style change
+          // rebuilds rather than mutates. It happens on selection, not per
+          // frame, so there is nothing to optimise here.
+          removeTrack(viewer, id)
+          track = undefined
+        }
+
+        if (track) {
+          track.holder.points = positions
+          continue
+        }
+
+        const holder = { points: positions }
+        const color = Cesium.Color.fromCssColorString(style.colorHex).withAlpha(TRACK_ALPHA)
+        const behind = color.withAlpha(TRACK_DEPTH_FAIL_ALPHA)
+        const material = style.dashed
+          ? new Cesium.PolylineDashMaterialProperty({ color, dashLength: 14 })
+          : new Cesium.ColorMaterialProperty(color)
+        const depthFailMaterial = style.dashed
+          ? new Cesium.PolylineDashMaterialProperty({ color: behind, dashLength: 14 })
+          : new Cesium.ColorMaterialProperty(behind)
+
+        const entity = viewer.entities.add({
+          id: `orbit-track:${id}`,
+          polyline: {
+            positions: new Cesium.CallbackProperty(() => holder.points, false),
+            width: style.width ?? 1.8,
+            material,
+            // Half of any orbit is behind the Earth. Without a depth-fail
+            // material that half simply vanishes and the ring reads as an arc.
+            depthFailMaterial,
+            // Straight segments between points in space. Draping onto the
+            // ellipsoid would turn an orbit into a ground track it is not.
+            arcType: Cesium.ArcType.NONE,
+          },
+        })
+        tracks.set(id, { entity, holder, styleKey })
+      }
+
+      for (const id of [...tracks.keys()]) {
+        if (!wanted.has(id)) removeTrack(viewer, id)
+      }
+    }
+
+    const tick = () => {
+      frame = requestAnimationFrame(tick)
+
+      const viewer = viewerRef.current
+      if (!viewer || viewer.isDestroyed()) return
+
+      const elapsed = performance.now() - startedAtReal
+      // A caller-supplied clock wins: the replay's window in 2004 is not
+      // expressible as "now, sped up". Default stays the live behaviour.
+      const simTime = simTimeForRef.current
+        ? simTimeForRef.current(elapsed)
+        : computeSimTime(simBase, elapsed, speedRef.current)
+      const satellites = propagateRef.current?.(simTime) ?? []
+
+      // Captured as the pair's markers are placed, so the connecting line
+      // below is drawn from the very Cartesians the entities were given.
+      let pairPrimaryPos = null
+      let pairSecondaryPos = null
+
+      for (const sat of satellites) {
+        let entity = entitiesRef.current.get(sat.id)
+        const position = Cesium.Cartesian3.fromDegrees(
+          sat.longitude_deg,
+          sat.latitude_deg,
+          sat.altitude_km * 1000,
+        )
+
+        const kind = sat.kind ?? OBJECT_KIND.UNKNOWN
+
+        if (!entity) {
+          entity = viewer.entities.add({
+            id: sat.id,
+            position,
+            // Billboard, not point: Cesium points are circles only, and the
+            // whole purpose of the shape axis is telling a payload apart from
+            // a debris fragment at a glance.
+            billboard: {
+              image: markerImage(kind, MARKER_DEFAULT_HEX),
+              width: markerPixelSize(kind),
+              height: markerPixelSize(kind),
+              verticalOrigin: Cesium.VerticalOrigin.CENTER,
+              horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+            },
+            label: {
+              text: sat.name,
+              font: '600 13px Inter, system-ui, sans-serif',
+              fillColor: Cesium.Color.fromCssColorString('#e4e4e7'),
+              showBackground: true,
+              backgroundColor: Cesium.Color.fromCssColorString('rgba(5,5,5,0.65)'),
+              backgroundPadding: new Cesium.Cartesian2(6, 4),
+              pixelOffset: new Cesium.Cartesian2(12, 0),
+              horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
+              verticalOrigin: Cesium.VerticalOrigin.CENTER,
+              distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 8.0e7),
+              disableDepthTestDistance: 0,
+              // Off by default; switched on below only for the few objects
+              // worth naming. See LABELLED_ONLY.
+              show: false,
+            },
+          })
+          entitiesRef.current.set(sat.id, entity)
+          // Remember what the marker currently looks like, so the styling
+          // below can skip the work when nothing about it changed. Rebuilding
+          // a billboard image for every object every frame is what makes a
+          // few-hundred-object set stutter.
+          entity.__markerKey = `${kind}|${MARKER_DEFAULT_HEX}|1`
+        } else {
+          entity.position = position
+        }
+
+        // A conjunction highlight takes precedence over the plain
+        // tracked-object selection: while a risk pair is on screen, that is
+        // the thing worth drawing attention to.
+        const highlight = highlightRef.current
+        const isPairMember =
+          highlight && (sat.id === highlight.primaryId || sat.id === highlight.secondaryId)
+        const isSelected = selectedRef.current === sat.id
+
+        let colorHex = MARKER_DEFAULT_HEX
+        let scale = 1
+        if (isPairMember) {
+          colorHex =
+            sat.id === highlight.primaryId ? ORBIT_IDENTITY_HEX.primary : ORBIT_IDENTITY_HEX.secondary
+          scale = 1.7
+          if (sat.id === highlight.primaryId) pairPrimaryPos = position
+          else pairSecondaryPos = position
+        } else if (isSelected) {
+          colorHex = MARKER_SELECTED_HEX
+          scale = 1.5
+        }
+
+        // Only touch the billboard when its appearance actually changed.
+        const markerKey = `${kind}|${colorHex}|${scale}`
+        if (entity.__markerKey !== markerKey) {
+          entity.billboard.image = markerImage(kind, colorHex, scale)
+          const px = markerPixelSize(kind, scale)
+          entity.billboard.width = px
+          entity.billboard.height = px
+          entity.__markerKey = markerKey
+        }
+
+        // Name only what the viewer is being pointed at.
+        const wantLabel = !LABELLED_ONLY || isPairMember || isSelected
+        if (entity.label.show !== wantLabel) entity.label.show = wantLabel
+
+        // A conjunction's two objects meet at one point, so labels on the
+        // same side land on top of each other exactly when it matters. The
+        // secondary's label goes on the left of its marker.
+        const labelLeft = Boolean(highlight && sat.id === highlight.secondaryId)
+        if (entity.__labelLeft !== labelLeft) {
+          entity.label.horizontalOrigin = labelLeft
+            ? Cesium.HorizontalOrigin.RIGHT
+            : Cesium.HorizontalOrigin.LEFT
+          entity.label.pixelOffset = new Cesium.Cartesian2(labelLeft ? -12 : 12, 0)
+          entity.__labelLeft = labelLeft
+        }
+      }
+
+      // The connecting line between a selected conjunction's two objects.
+      // Both endpoints were captured while placing the markers above, so the
+      // line is exactly where the two markers are this frame — never a
+      // separately propagated (and possibly drifting) pair of points.
+      //
+      // The endpoints go into a ref that a CallbackProperty reads, and the
+      // entity is built ONCE. Reassigning `polyline.positions` every frame
+      // instead looks like it should work and does not: each assignment
+      // invalidates the geometry, Cesium rebuilds the primitive
+      // asynchronously, and re-invalidating on the next frame means the build
+      // never completes. The entity stays present and valid the whole time
+      // and simply never draws. A CallbackProperty marked non-constant is the
+      // supported path for geometry that moves every frame.
+      const highlight = highlightRef.current
+
+      if (pairPrimaryPos && pairSecondaryPos) {
+        linkPositionsRef.current = [pairPrimaryPos, pairSecondaryPos]
+        const color = Cesium.Color.fromCssColorString(highlight.colorHex)
+
+        if (!linkEntityRef.current) {
+          linkEntityRef.current = viewer.entities.add({
+            polyline: {
+              positions: new Cesium.CallbackProperty(() => linkPositionsRef.current, false),
+              width: 2,
+              material: new Cesium.PolylineDashMaterialProperty({
+                color,
+                dashLength: 12,
+              }),
+              // The two objects are frequently on opposite sides of the
+              // planet, so the chord between them passes through it. Without
+              // a depth-fail material that stretch is simply gone and the
+              // pair reads as unconnected; drawing it faintly keeps the line
+              // continuous while still reading as "behind the Earth".
+              depthFailMaterial: new Cesium.PolylineDashMaterialProperty({
+                color: color.withAlpha(0.4),
+                dashLength: 12,
+              }),
+              // A straight chord, not a great-circle arc: these are two
+              // objects in space, and bending the line onto the ellipsoid
+              // would draw a ground track that does not exist.
+              arcType: Cesium.ArcType.NONE,
+            },
+          })
+          linkColorRef.current = highlight.colorHex
+        } else if (linkColorRef.current !== highlight.colorHex) {
+          // Only on an actual change: assigning the material every frame has
+          // the same invalidation problem as assigning the positions did.
+          linkEntityRef.current.polyline.material.color = color
+          linkEntityRef.current.polyline.depthFailMaterial.color = color.withAlpha(0.4)
+          linkColorRef.current = highlight.colorHex
+        }
+      } else if (linkEntityRef.current) {
+        viewer.entities.remove(linkEntityRef.current)
+        linkEntityRef.current = null
+        linkColorRef.current = null
+      }
+
+      const now = performance.now()
+
+      // Orbit rings are re-sampled on their own, slower cadence: each one is
+      // 129 SGP4 propagations, which is cheap four times a second and not
+      // cheap sixty.
+      if (now - lastTrackRefresh > TRACK_REFRESH_MS) {
+        lastTrackRefresh = now
+        syncOrbitTracks(viewer, simTime)
+        syncEncounterMarker(viewer, simTime)
+        syncBurnMarker(viewer)
+      }
+
+      // Throttle React updates: the HUD only needs a few refreshes a second,
+      // and pushing state every frame would re-render the whole console.
+      if (now - lastPush > telemetryIntervalRef.current) {
+        lastPush = now
+        telemetryRef.current?.({ simTime, satellites })
+      }
+    }
+
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [satelliteCount, clockKey])
+
+  return <div className="cesium-globe" ref={containerRef} />
+}
+
+export default CesiumGlobe

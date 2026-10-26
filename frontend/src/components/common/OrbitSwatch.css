@@ -1,0 +1,14 @@
+/* Matches the globe: primary solid, secondary dashed, in --orbit-* colours. */
+.orbit-swatch {
+  display: inline-block;
+  flex: none;
+  width: 18px;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px solid var(--orbit-primary);
+}
+
+.orbit-swatch--secondary {
+  border-top: 2px dashed var(--orbit-secondary);
+}

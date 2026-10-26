@@ -1,0 +1,221 @@
+/*
+ * globePage.css — the shared full-screen-globe layout used by every tab.
+ *
+ * The globe is the page. Everything else is a FloatingPanel layered over it:
+ * header across the top, a rail of cards down each side, an optional strip
+ * docked bottom-centre, and an optional centre group under the header.
+ *
+ * The overlay layer ignores the pointer so the globe can be dragged anywhere
+ * no card is; only cards and controls take input back.
+ *
+ * Markup:
+ *   .globe-page
+ *     .globe-page__globe            (the Cesium canvas)
+ *     .globe-page__overlay
+ *       .globe-page__header
+ *       .globe-page__banner         (optional)
+ *       .globe-page__field
+ *         .globe-page__center       (optional)
+ *         .globe-page__rail.globe-page__rail--left
+ *         .globe-page__rail.globe-page__rail--right
+ *         .globe-page__strip        (optional)
+ */
+
+.globe-page {
+  --rail-w: 320px;
+  --strip-max-w: 900px;
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The canvas runs 18vh above the top of the page, which centres the Earth
+   ~9vh higher — in the open space between the header and the bottom strip,
+   instead of behind the strip. Overflow is clipped by .globe-page, and Cesium
+   maps pointer input through the canvas rect, so picking is unaffected. */
+.globe-page__globe {
+  position: absolute;
+  inset: -18vh 0 0 0;
+}
+
+.globe-page__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* Extra room at the bottom keeps Cesium's required attribution visible. */
+  padding: var(--space-3) var(--space-3) 30px;
+  pointer-events: none;
+}
+
+.globe-page__header,
+.globe-page__banner {
+  flex: none;
+  pointer-events: auto;
+}
+
+.globe-page__banner code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.globe-page__field {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.globe-page__rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 45%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+.globe-page__rail--left {
+  left: 0;
+  align-items: flex-start;
+}
+
+/* Right-anchored, so a card widened from its west edge grows leftwards. */
+.globe-page__rail--right {
+  right: 0;
+  align-items: flex-end;
+}
+
+.globe-page__rail > *,
+.globe-page__strip > * {
+  pointer-events: auto;
+}
+
+.globe-page__float {
+  width: var(--rail-w);
+}
+
+/*
+ * The one card per rail that takes whatever height is left and scrolls its own
+ * body (the AI advisor, the maneuver result). Without it every card kept its
+ * natural height and the last one — the one being presented — landed below
+ * the bottom of a laptop screen inside a scrolling rail. A collapsed or
+ * hand-resized card goes back to its own height.
+ */
+.globe-page__rail > .globe-page__float--fill:not(.is-collapsed):not([style*='height']) {
+  flex: 1 1 0;
+  min-height: 180px;
+}
+
+/* Docked bottom-centre between the rails; grows upwards from its north edge. */
+.globe-page__strip {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(var(--strip-max-w), calc(100% - 2 * var(--rail-w) - 2 * var(--space-4)));
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.globe-page__float--strip {
+  width: 100%;
+}
+
+/* Until someone drags it taller, keep the strip to the lower part of the
+   screen so it does not bury the globe on a laptop; its content scrolls. */
+.globe-page__float--strip:not([style*='height']) {
+  max-height: 34vh;
+}
+
+/* On a shorter window the same third of the screen would leave no globe. */
+@media (max-height: 860px) {
+  .globe-page__float--strip:not([style*='height']) {
+    max-height: 28vh;
+  }
+}
+
+.globe-page__center {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 2 * var(--rail-w) - 2 * var(--space-4));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
+/* Frosted pill for small readouts floating over the globe (sim clock etc.). */
+.globe-page__hud {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: rgba(9, 11, 15, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Primary target is a 1920x1080 projector. Below that, narrow the rails; on
+   small screens drop the overlay and stack everything under the globe. */
+@media (max-width: 1400px) {
+  .globe-page { --rail-w: 280px; }
+}
+
+@media (max-width: 900px) {
+  .globe-page {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+
+  .globe-page__overlay,
+  .globe-page__field {
+    display: contents;
+  }
+
+  .globe-page__header { order: 0; padding: var(--space-3) var(--space-3) 0; }
+  .globe-page__banner { order: 1; padding: 0 var(--space-3); }
+  .globe-page__globe { order: 2; position: relative; inset: auto; height: 55vh; }
+  .globe-page__center { order: 3; position: static; transform: none; padding: var(--space-3); max-width: none; }
+  .globe-page__rail--right { order: 4; }
+  .globe-page__rail--left { order: 5; }
+  .globe-page__strip { order: 6; }
+
+  .globe-page__rail,
+  .globe-page__strip {
+    position: static;
+    transform: none;
+    width: auto;
+    max-width: none;
+    overflow: visible;
+    padding: 0 var(--space-3) var(--space-3);
+    align-items: stretch;
+  }
+
+  .globe-page__float,
+  .globe-page__float--strip {
+    width: auto !important;
+    max-height: none;
+  }
+}

@@ -94,3 +94,35 @@ def test_get_ai_advice_with_mock_gemini_api(sample_request, monkeypatch):
         assert advice.is_fallback is False
         assert advice.executive_summary == "High risk detected. Recommend retrograde maneuver."
         assert advice.recommended_action == "Execute -4.0 cm/s burn."
+
+
+def test_get_ai_advice_tries_the_next_model_when_one_is_overloaded(sample_request, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "model-a, model-b")
+
+    good = MagicMock()
+    good.text = '{"executive_summary": "From model b.", "key_metrics": {}}'
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = [RuntimeError("503 UNAVAILABLE"), good]
+
+    with patch("google.genai.Client", return_value=mock_client):
+        advice = get_ai_advice(sample_request)
+
+    assert advice.is_fallback is False
+    assert advice.executive_summary == "From model b."
+    tried = [c.kwargs["model"] for c in mock_client.models.generate_content.call_args_list]
+    assert tried == ["model-a", "model-b"]
+
+
+def test_get_ai_advice_falls_back_when_every_model_fails(sample_request, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-gemini-key")
+    monkeypatch.setenv("GEMINI_MODEL", "model-a,model-b")
+
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = RuntimeError("503 UNAVAILABLE")
+
+    with patch("google.genai.Client", return_value=mock_client):
+        advice = get_ai_advice(sample_request)
+
+    assert advice.is_fallback is True
+    assert mock_client.models.generate_content.call_count == 2

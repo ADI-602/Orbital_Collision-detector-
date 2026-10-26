@@ -1,0 +1,63 @@
+.gauge-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.gauge-card__label {
+  align-self: flex-start;
+}
+
+.gauge-card__ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.gauge-card__ring svg {
+  display: block;
+}
+
+.gauge-card__track {
+  stroke: rgba(255, 255, 255, 0.07);
+}
+
+.gauge-card__value {
+  transition: stroke-dasharray 0.4s ease;
+}
+
+.gauge-card--accent .gauge-card__value { stroke: var(--accent); }
+.gauge-card--nominal .gauge-card__value { stroke: var(--risk-nominal); }
+.gauge-card--watch .gauge-card__value { stroke: var(--risk-watch); }
+.gauge-card--critical .gauge-card__value { stroke: var(--risk-critical); }
+
+.gauge-card__centre {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.gauge-card__readout {
+  font-size: var(--fs-num);
+  line-height: 1;
+}
+
+.gauge-card__unit {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.gauge-card__footnote {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.45;
+}

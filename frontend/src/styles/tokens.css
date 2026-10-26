@@ -1,0 +1,140 @@
+/*
+ * tokens.css — design system for the SDA console.
+ *
+ * Visual language: dark, near-monochrome, soft borderless cards. Colour is
+ * scarce on purpose — when almost everything is greyscale, the one teal
+ * highlight or one red risk dot actually carries meaning. Adding a second
+ * decorative accent is what makes a console read as generic.
+ *
+ * Three colour systems live here and must never be mixed:
+ *
+ *   --accent-*  UI chrome only (active tab, CTA, selection, focus)
+ *   --risk-*    semantic conjunction threat only
+ *   --orbit-*   which object an orbit belongs to (primary / secondary), on
+ *               the globe and in the swatches that act as its legend. Hues
+ *               chosen to sit outside the risk scale (no red, amber, green)
+ *               and apart from the teal accent.
+ *
+ * Never style chrome with a risk token, or risk with the accent. An orbit's
+ * colour says WHOSE it is; the event's risk lives on the badge, the TCA
+ * marker and the line joining the two objects.
+ *
+ * Type: sans (Inter) for all labels and prose; mono (JetBrains Mono) ONLY for
+ * tabular numeric telemetry — coordinates, altitudes, clocks, NORAD IDs.
+ * Uppercase-mono-everywhere reads as a 1980s terminal pastiche rather than a
+ * modern operations console.
+ *
+ * Dark-only by design: this is a projector HUD, and a prefers-color-scheme
+ * light branch would be a live-demo hazard, not a feature.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Surfaces ------------------------------------------------------- */
+  /* Neutral near-black. Deliberately not blue-tinted: the reference console
+     gets its depth from the imagery behind the glass, not from a hue cast. */
+  --bg-void: #050505;
+  --bg-deep: #0a0a0a;
+
+  /* Soft cards: low-opacity fill + a hairline that is almost subliminal.
+     No hard edges anywhere — visible box borders are the single biggest
+     contributor to a UI reading as unfinished. */
+  --card-fill: rgba(255, 255, 255, 0.045);
+  --card-fill-strong: rgba(255, 255, 255, 0.07);
+  --card-fill-solid: rgba(20, 20, 22, 0.96); /* @supports fallback */
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-border-hover: rgba(255, 255, 255, 0.16);
+  --card-blur: 20px;
+
+  --radius-card: 18px;
+  --radius-inner: 12px;
+  --radius-pill: 999px;
+
+  /* --- Accent (chrome only) ------------------------------------------- */
+  --accent: #5fd9d0;
+  --accent-soft: rgba(95, 217, 208, 0.14);
+  --accent-border: rgba(95, 217, 208, 0.4);
+  --accent-text: #0a1a19;
+
+  /* --- Risk scale (semantic only) ------------------------------------- */
+  /* The backend emits three levels (main.py:233). --risk-elevated is defined
+     for completeness but currently unused; an unrecognised level must render
+     as UNKNOWN, never silently as nominal. */
+  --risk-nominal: #4ade80;
+  --risk-nominal-soft: rgba(74, 222, 128, 0.14);
+
+  --risk-watch: #fbbf24;
+  --risk-watch-soft: rgba(251, 191, 36, 0.14);
+
+  --risk-elevated: #fb923c;
+  --risk-elevated-soft: rgba(251, 146, 60, 0.14);
+
+  --risk-critical: #f43f5e;
+  --risk-critical-soft: rgba(244, 63, 94, 0.14);
+
+  --risk-unknown: #71717a;
+  --risk-unknown-soft: rgba(113, 113, 122, 0.14);
+
+  /* Orbit identity (see the header). Mirrored as hex in lib/conjunctions.js
+     ORBIT_IDENTITY_HEX, because Cesium cannot read CSS custom properties. */
+  --orbit-primary: #60a5fa;
+  --orbit-secondary: #c084fc;
+
+  /* --- Text ------------------------------------------------------------ */
+  /* Every step clears 4.5:1 against the dark card fill, faint included. The
+     old faint (#52525b, ~2.6:1) carried real data — prediction leads, dates —
+     and vanished on a laptop panel. */
+  --text-primary: #f4f4f5;
+  --text-secondary: #b4b4bc;
+  --text-dim: #93939c;
+  --text-faint: #7c7c85;
+
+  /* --- Type ------------------------------------------------------------ */
+  /* Full system fallbacks: a font failure must never yield an unstyled serif.
+     Faces are self-hosted via @fontsource-variable (imported in main.jsx), so
+     they work with no network. */
+  --font-sans: 'Inter Variable', Inter, system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Consolas, monospace;
+
+  /* Sized for a 16" laptop presented full screen (~1536x960 CSS px): nothing
+     a viewer needs to read goes below 11px. */
+  --fs-micro: 11px;
+  --fs-label: 12px;
+  --fs-caption: 13px;
+  --fs-body: 14px;
+  --fs-title: 16px;
+  --fs-num: 22px;
+  --fs-num-lg: 32px;
+
+  /* --- Space ------------------------------------------------------------ */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+}
+
+/*
+ * Section label: small, tracked-out, secondary. Sans, not mono — these are
+ * words, not readouts.
+ */
+.ui-label {
+  font-family: var(--font-sans);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/*
+ * Numeric telemetry. Mono + tabular figures so digits hold their column and
+ * a changing value does not make the layout jitter.
+ */
+.ui-readout {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}

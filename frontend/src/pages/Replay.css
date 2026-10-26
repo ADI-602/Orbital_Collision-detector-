@@ -1,0 +1,239 @@
+/* Layout: styles/globePage.css. This file holds only the replay's content. */
+
+/* --- Left rail ---------------------------------------------------------- */
+
+.replay__case,
+.replay__history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.replay__case-name {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-primary);
+}
+
+.replay__case-body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.replay__case-note {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.replay__case-body code,
+.replay__case-note code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-primary);
+}
+
+.replay__case-source {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* --- Centre overlays ---------------------------------------------------- */
+
+/* The countdown is the one thing on this page that should be legible from the
+   back of a room, so it sits top-centre over the globe. */
+.replay__countdown {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-inner);
+  background: rgba(9, 11, 15, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+/* The centre group is one compact column — countdown and clock side by side,
+   the timeline under them — so it takes as little of the globe as it can. */
+.replay__center {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  width: min(600px, calc(100% - 2 * var(--rail-w) - 2 * var(--space-4)));
+  max-width: none;
+  align-items: stretch;
+}
+
+.replay__countdown .t-minus__value { white-space: nowrap; }
+
+.replay__topline {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.replay__clockbar {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+
+.replay__hud-clock { font-size: var(--fs-caption); }
+
+.replay__hud-speed {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.replay__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: rgba(9, 11, 15, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.replay__control {
+  padding: var(--space-1) var(--space-4);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.replay__controls-note {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* --- Right rail ---------------------------------------------------------- */
+
+.replay__headline {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.replay__pair {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+}
+
+.replay__pair-primary { color: var(--text-secondary); }
+.replay__pair-arrow { color: var(--text-faint); }
+.replay__pair-secondary { color: var(--text-primary); }
+
+.replay__pc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.replay__pc-value {
+  font-size: var(--fs-num-lg);
+  line-height: 1.1;
+}
+
+.replay__pc-note {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.replay__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0;
+}
+
+.replay__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.replay__key {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+}
+
+.replay__val {
+  margin: 0;
+  font-size: var(--fs-caption);
+  text-align: right;
+}
+
+.replay__source {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+
+@media (max-width: 1700px) {
+  .replay__controls-note { display: none; }
+}
+
+/* The four predictions and their reference ranges are the evidence this view
+   exists to show, so the strip gets enough height for all of it without a
+   scroll. The globe sits higher (globePage.css), so this costs little of it. */
+.replay .globe-page__float--strip:not([style*='height']) {
+  max-height: 40vh;
+}
+
+/* A shorter window cannot give the table that much without hiding the globe;
+   the table scrolls inside the card instead. */
+@media (max-height: 860px) {
+  .replay .globe-page__float--strip:not([style*='height']) {
+    max-height: 30vh;
+  }
+}

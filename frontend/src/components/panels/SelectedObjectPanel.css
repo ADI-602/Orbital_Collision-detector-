@@ -1,0 +1,91 @@
+.selected-object {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.selected-object__id {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.selected-object__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.selected-object__norad {
+  flex: none;
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+}
+
+/* Latitude, longitude, altitude side by side: one row instead of three. */
+.selected-object__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.selected-object__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-inner);
+  background: var(--card-fill);
+}
+
+.selected-object__key {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.selected-object__val {
+  margin: 0;
+  font-size: var(--fs-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-object__note {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.selected-object--empty {
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: 0;
+}
+
+/* Left-aligned and tight: on the console this card sits empty above the
+   selected event, and a centred, padded empty state cost ~190 px of the
+   height the AI advisor needs. */
+.selected-object__empty-title {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.selected-object__empty-hint {
+  font-family: var(--font-sans);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  line-height: 1.5;
+}

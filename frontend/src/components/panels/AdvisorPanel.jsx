@@ -1,0 +1,153 @@
+import { useEffect, useState } from 'react'
+
+import ErrorState from '../common/ErrorState.jsx'
+import LoadingState from '../common/LoadingState.jsx'
+import { adviceProvenance } from '../../lib/advice.js'
+import './AdvisorPanel.css'
+
+const SECTIONS = [
+  ['executive_summary', 'Summary'],
+  ['risk_assessment', 'Risk assessment'],
+  ['recommended_action', 'Recommended action'],
+  ['tradeoff_analysis', 'Trade-offs'],
+]
+
+/** "11:24", UTC, for the cached-answer chip. */
+function formatUtcTime(ms) {
+  return new Date(ms).toISOString().slice(11, 16)
+}
+
+/**
+ * Whole seconds since `active` last became true; 0 while inactive.
+ *
+ * A live model answer takes ~20 s (measured 2026-10-26). Silence that long
+ * reads as a hang on stage; a counting clock reads as work in progress.
+ */
+function useElapsedSeconds(active) {
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    if (!active) return undefined
+    const startedAt = Date.now()
+    setSeconds(0)
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000)
+    return () => clearInterval(timer)
+  }, [active])
+  return active ? seconds : 0
+}
+
+/**
+ * The AI layer's commentary on the selected conjunction.
+ *
+ * Narrative only. The model's `key_metrics` field is deliberately NOT
+ * rendered: it is untyped on the wire, and a number shown here in the model's
+ * words could differ from the one the physics panels show. Every figure on
+ * screen comes from the pipeline; this panel explains them.
+ *
+ * Provenance is always visible. "AI: LIVE" appears only when the backend says
+ * is_fallback === false; otherwise the offline rule-based advisor is named.
+ *
+ * @param {object} props
+ * @param {object|null} props.event
+ * @param {ReturnType<import('../../hooks/useAiAdvice.js').useAiAdvice>} props.ai
+ */
+function AdvisorPanel({ event, ai }) {
+  const { status, advice, error, cachedAt, refusal, canAsk, ask } = ai
+  const elapsed = useElapsedSeconds(status === 'running')
+
+  if (!event) {
+    return (
+      <div className="advisor advisor--empty">
+        <span className="advisor__empty-title">No conjunction selected</span>
+        <span className="advisor__empty-hint">
+          Select an event to have the advisor explain its figures.
+        </span>
+      </div>
+    )
+  }
+
+  if (refusal) {
+    return (
+      <div className="advisor advisor--empty">
+        <span className="advisor__empty-title">Nothing to explain</span>
+        <span className="advisor__empty-hint">{refusal}</span>
+      </div>
+    )
+  }
+
+  const provenance = advice ? adviceProvenance(advice) : null
+
+  return (
+    <div className="advisor">
+      <div className="advisor__bar">
+        <button
+          type="button"
+          className="advisor__ask"
+          // "Ask again" always goes to the model; the first ask may reuse a
+          // live answer to the very same figures from earlier this session.
+          onClick={() => ask({ fresh: Boolean(advice) })}
+          disabled={!canAsk || status === 'running'}
+        >
+          {advice ? 'Ask again' : 'Explain this event'}
+        </button>
+        {provenance && (
+          <span
+            className={`advisor__chip ${provenance.live ? 'is-live' : 'is-offline'}`}
+            title={provenance.note}
+          >
+            {provenance.label}
+          </span>
+        )}
+        {status === 'ready' && cachedAt && (
+          <span
+            className="advisor__chip advisor__chip--cached"
+            title="The same figures were explained earlier this session, so that answer is shown instantly. Ask again for a new one."
+          >
+            Cached · {formatUtcTime(cachedAt)} UTC
+          </span>
+        )}
+      </div>
+
+      {status === 'running' && (
+        <>
+          <LoadingState label="ASKING THE ADVISOR" />
+          <p className="advisor__note">
+            <span className="ui-readout">{elapsed} s</span> · a live answer usually takes about 20 s.
+            The figures in the other panels are already final.
+          </p>
+        </>
+      )}
+
+      {status === 'error' && (
+        <ErrorState
+          title="The advisor request failed"
+          detail={error?.detail ?? error?.message ?? 'unknown error'}
+          hint="The physics figures are unaffected. Nothing was substituted."
+          onRetry={() => ask({ fresh: true })}
+        />
+      )}
+
+      {status === 'ready' && advice && (
+        <div className="advisor__body">
+          {SECTIONS.map(([key, title]) =>
+            advice[key] ? (
+              <section key={key} className="advisor__section">
+                <span className="advisor__title ui-label">{title}</span>
+                <p className="advisor__text">{advice[key]}</p>
+              </section>
+            ) : null,
+          )}
+          <p className="advisor__note">{provenance.note}</p>
+        </div>
+      )}
+
+      {status === 'idle' && (
+        <p className="advisor__note">
+          Commentary on the figures above. The advisor is handed the pipeline&rsquo;s
+          numbers and computes none of them.
+        </p>
+      )}
+    </div>
+  )
+}
+
+export default AdvisorPanel

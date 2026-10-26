@@ -1,6 +1,6 @@
 # Orbital Risk Advisor — Backend
 
-Python orbital mechanics pipeline + FastAPI + Claude AI layer.
+Python orbital mechanics pipeline + FastAPI + Gemini AI layer (with an offline rule-based fallback).
 
 ## Setup
 
@@ -22,15 +22,23 @@ pip install -r backend/requirements.txt
 
 ```bash
 # With venv active, from repo root
-uvicorn backend.api.main:app --reload
+uvicorn backend.api.main:app --port 8000
 ```
+
+Secrets are read from `.env` at the repo root (see `.env.example`): `GEMINI_API_KEY` for the AI layer,
+`SPACETRACK_USERNAME` / `SPACETRACK_PASSWORD` for the live tracked set. Neither is needed for the
+physics endpoints. Starting the server begins scheduled screening of the tracked set; restart it once,
+not repeatedly, because each start logs in to Space-Track (its rate limits are hard).
 
 ## Running tests
 
 ```bash
 # With venv active, from repo root
-pytest tests/
+python -m pytest tests/ -q
 ```
+
+Use `python -m pytest`, not the `pytest` shim: the shim does not put the repo root on `sys.path`,
+so `import backend` fails. The suite never reaches Space-Track or any LLM.
 
 ## Smoke test (Phase 1 gate)
 
@@ -44,8 +52,8 @@ python scripts/smoke_test.py
 ## Structure
 
 - `backend/physics/` — deterministic orbital-mechanics pipeline (no LLM calls)
-- `backend/ai/`      — Claude API explanation/recommendation layer
+- `backend/ai/`      — Gemini explanation/recommendation layer (narrates the pipeline's figures; computes none)
 - `backend/api/`     — FastAPI routes tying physics + AI together
 
-See `docs/project-doc.md` for the full technical spec and `bob.md` for project
-coding guardrails.
+See `docs/project-doc.md` for the full technical spec, `CLAUDE.md` for the project's coding
+guardrails, and `docs/api_contract.md` for every endpoint.
