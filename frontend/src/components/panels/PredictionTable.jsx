@@ -1,6 +1,7 @@
 import ErrorState from '../common/ErrorState.jsx'
 import MoreDetails from '../common/MoreDetails.jsx'
 import RiskBadge from '../common/RiskBadge.jsx'
+import Term from '../common/Term.jsx'
 import { formatMissDistance, formatPc } from '../../lib/conjunctions.js'
 import {
   ASSERTED_MISS_DISTANCE_M,
@@ -81,8 +82,12 @@ function PredictionTable({ days, loading }) {
         <div className="prediction-table__head" role="row">
           <span className="ui-label" role="columnheader">Prediction</span>
           <span className="ui-label" role="columnheader">Lead</span>
-          <span className="ui-label prediction-table__num" role="columnheader">Miss</span>
-          <span className="ui-label prediction-table__num" role="columnheader">Pc</span>
+          <span className="ui-label prediction-table__num" role="columnheader">
+            <Term id="missDistance">Miss</Term>
+          </span>
+          <span className="ui-label prediction-table__num" role="columnheader">
+            <Term id="pc">Pc</Term>
+          </span>
           <span className="ui-label prediction-table__num" role="columnheader">Threat</span>
         </div>
 

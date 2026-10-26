@@ -1,5 +1,6 @@
 import MoreDetails from '../common/MoreDetails.jsx'
 import RiskBadge from '../common/RiskBadge.jsx'
+import Term from '../common/Term.jsx'
 import TMinus from '../common/TMinus.jsx'
 import {
   EVENT_ORIGIN,
@@ -118,7 +119,9 @@ function EventDetail({ event, onOpenReplay }) {
 
       {/* Pc leads: it is the number the whole pipeline exists to produce. */}
       <div className="event-detail__headline">
-        <span className="event-detail__headline-label ui-label">Collision probability</span>
+        <span className="event-detail__headline-label ui-label">
+          <Term id="pc">Collision probability</Term>
+        </span>
         {coOrbital ? (
           <span className="event-detail__headline-na">Not applicable</span>
         ) : (
@@ -126,8 +129,10 @@ function EventDetail({ event, onOpenReplay }) {
         )}
         {!coOrbital && (
           <span className="event-detail__scale">
-            RED ≥ {THREAT_THRESHOLDS.RED.toExponential(0)} · YELLOW ≥{' '}
-            {THREAT_THRESHOLDS.YELLOW.toExponential(0)}
+            <Term id="threatLevel">
+              RED ≥ {THREAT_THRESHOLDS.RED.toExponential(0)} · YELLOW ≥{' '}
+              {THREAT_THRESHOLDS.YELLOW.toExponential(0)}
+            </Term>
           </span>
         )}
       </div>
@@ -144,19 +149,19 @@ function EventDetail({ event, onOpenReplay }) {
 
       <div className="event-detail__rows">
         <div className="event-detail__row">
-          <span className="event-detail__key">Miss distance</span>
+          <span className="event-detail__key"><Term id="missDistance">Miss distance</Term></span>
           <span className="event-detail__val ui-readout">
             {formatMissDistance(event.miss_distance_m)}
           </span>
         </div>
         <div className="event-detail__row">
-          <span className="event-detail__key">Relative speed</span>
+          <span className="event-detail__key"><Term id="relativeSpeed">Relative speed</Term></span>
           <span className="event-detail__val ui-readout">
             {formatRelativeSpeed(event.relative_speed_km_s)}
           </span>
         </div>
         <div className="event-detail__row">
-          <span className="event-detail__key">TCA (UTC)</span>
+          <span className="event-detail__key"><Term id="tca">TCA</Term> (UTC)</span>
           <span className="event-detail__val ui-readout" title={tca.raw}>
             {tca.date} {tca.time}
           </span>

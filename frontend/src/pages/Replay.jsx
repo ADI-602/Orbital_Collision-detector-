@@ -6,6 +6,7 @@ import FloatingPanel from '../components/common/FloatingPanel.jsx'
 import LoadingState from '../components/common/LoadingState.jsx'
 import MoreDetails from '../components/common/MoreDetails.jsx'
 import RiskBadge from '../components/common/RiskBadge.jsx'
+import Term from '../components/common/Term.jsx'
 import TMinus from '../components/common/TMinus.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AdvisorPanel from '../components/panels/AdvisorPanel.jsx'
@@ -349,7 +350,7 @@ function Replay({ view, onChangeView }) {
                   {/* Pc as a readout, not a gauge: a linear gauge would draw a
                       real 6.6e-4 as visually empty. The badge carries severity. */}
                   <div className="replay__pc">
-                    <span className="ui-label">Collision probability</span>
+                    <span className="ui-label"><Term id="pc">Collision probability</Term></span>
                     <span className="replay__pc-value ui-readout">{formatPc(headline.pc)}</span>
                     <span className="replay__pc-note">
                       ESA&rsquo;s acceptance level at the time was{' '}
@@ -359,19 +360,19 @@ function Replay({ view, onChangeView }) {
 
                   <dl className="replay__rows">
                     <div className="replay__row">
-                      <dt className="replay__key">Miss distance</dt>
+                      <dt className="replay__key"><Term id="missDistance">Miss distance</Term></dt>
                       <dd className="replay__val ui-readout">
                         {formatMissDistance(headline.miss_distance_m)}
                       </dd>
                     </div>
                     <div className="replay__row">
-                      <dt className="replay__key">Relative speed</dt>
+                      <dt className="replay__key"><Term id="relativeSpeed">Relative speed</Term></dt>
                       <dd className="replay__val ui-readout">
                         {formatRelativeSpeed(headline.relative_speed_km_s)}
                       </dd>
                     </div>
                     <div className="replay__row">
-                      <dt className="replay__key">TCA — computed</dt>
+                      <dt className="replay__key"><Term id="tca">TCA</Term> — computed</dt>
                       <dd className="replay__val ui-readout" title={tca.raw}>
                         {tca.date} {tca.time}
                       </dd>

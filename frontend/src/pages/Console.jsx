@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { API_BASE_URL } from '../api/client.js'
 import ErrorState from '../components/common/ErrorState.jsx'
 import FloatingPanel from '../components/common/FloatingPanel.jsx'
+import Term from '../components/common/Term.jsx'
 import CesiumGlobe from '../components/globe/CesiumGlobe.jsx'
 import AssetStrip from '../components/panels/AssetStrip.jsx'
 import AdvisorPanel from '../components/panels/AdvisorPanel.jsx'
@@ -335,7 +336,9 @@ function Console({ view, onChangeView }) {
                 </div>
                 <div className="console__feed-row">
                   <span className="console__feed-key">Propagator</span>
-                  <span className="console__feed-val ui-readout">SGP4</span>
+                  <span className="console__feed-val ui-readout">
+                    <Term id="sgp4">SGP4</Term>
+                  </span>
                 </div>
               </div>
 

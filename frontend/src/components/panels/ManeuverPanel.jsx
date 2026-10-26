@@ -1,6 +1,7 @@
 import ErrorState from '../common/ErrorState.jsx'
 import LoadingState from '../common/LoadingState.jsx'
 import MoreDetails from '../common/MoreDetails.jsx'
+import Term from '../common/Term.jsx'
 import { formatPc } from '../../lib/conjunctions.js'
 import {
   formatDeltaV,
@@ -61,7 +62,7 @@ function ManeuverPanel({ event, maneuver }) {
   return (
     <div className="maneuver">
       <div className="maneuver__controls">
-        <span className="ui-label">Along-track ΔV</span>
+        <span className="ui-label"><Term id="alongTrackDv">Along-track ΔV</Term></span>
         <div className="maneuver__presets">
           {DELTA_V_PRESETS_CM_S.map((dv) => (
             <button
@@ -131,7 +132,7 @@ function ManeuverResult({ result }) {
       {/* Figures first: they are the result. The diagram shows them. */}
       <dl className="maneuver__rows">
         <div className="maneuver__row">
-          <dt className="maneuver__key">Miss distance</dt>
+          <dt className="maneuver__key"><Term id="missDistance">Miss distance</Term></dt>
           <dd className="maneuver__val ui-readout">
             {formatEncounterDistance(result.pre_burn_miss_distance_m)}
             <span className="maneuver__arrow" aria-hidden="true"> → </span>
@@ -141,7 +142,7 @@ function ManeuverResult({ result }) {
           </dd>
         </div>
         <div className="maneuver__row">
-          <dt className="maneuver__key">Collision probability</dt>
+          <dt className="maneuver__key"><Term id="pc">Collision probability</Term></dt>
           <dd className="maneuver__val ui-readout">
             {formatPc(result.pre_burn_pc)}
             <span className="maneuver__arrow" aria-hidden="true"> → </span>
