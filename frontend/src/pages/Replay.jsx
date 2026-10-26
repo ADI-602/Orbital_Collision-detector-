@@ -432,6 +432,16 @@ function Replay({ view, onChangeView }) {
                         {formatMissDistance(headline.miss_distance_m)}
                       </dd>
                     </div>
+                    {Number.isFinite(headline.hard_body_radius_m) && (
+                      <div className="replay__row">
+                        <dt className="replay__key">
+                          <Term id="hardBodyRadius">Hard-body radius</Term>
+                        </dt>
+                        <dd className="replay__val ui-readout">
+                          {headline.hard_body_radius_m.toFixed(1)} m
+                        </dd>
+                      </div>
+                    )}
                     <div className="replay__row">
                       <dt className="replay__key"><Term id="relativeSpeed">Relative speed</Term></dt>
                       <dd className="replay__val ui-readout">

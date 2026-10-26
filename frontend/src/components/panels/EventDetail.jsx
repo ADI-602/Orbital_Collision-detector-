@@ -206,6 +206,15 @@ function EventDetail({ event, onOpenReplay, onShowOnGlobe }) {
         <p>
           SGP4 propagation, refined TCA, 2D encounter-plane Pc (Foster/Chan/Alfano).
         </p>
+        {Number.isFinite(event.hard_body_radius_m) && (
+          <p>
+            <Term id="hardBodyRadius">Hard-body radius</Term> used for this Pc:{' '}
+            <span className="ui-readout">{event.hard_body_radius_m.toFixed(1)} m</span>.
+            The pipeline applies this one value to every pair: the Envisat
+            validation case&rsquo;s combined size (satellite plus a debris
+            fragment), not a size estimated for these two objects.
+          </p>
+        )}
         {injected && (
           <p>
             <strong>Injected validation case.</strong> {event.provenance?.label}. Published:{' '}

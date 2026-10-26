@@ -130,6 +130,9 @@ def assess_conjunction(candidate, ts) -> Optional[Dict[str, Any]]:
             "pc": pc,
             "relative_speed_km_s": tca_res.rel_velocity_km_s,
             "threat_level": threat_level(pc),
+            # The radius this Pc was computed with, so the UI can state the
+            # assumption instead of leaving it implicit. Echoed, not derived.
+            "hard_body_radius_m": HARD_BODY_RADIUS_KM * 1000.0,
         }
 
     except Exception as exc:

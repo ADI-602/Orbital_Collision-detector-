@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from backend.api.main import app  # noqa: E402
+from backend.api.assessment import HARD_BODY_RADIUS_KM  # noqa: E402
 from tests.fixtures.envisat_tles import ENVISAT_TLES, ZENITH2_TLES  # noqa: E402
 
 
@@ -105,6 +106,14 @@ class TestBatchIsolation:
         # test_envisat_replay.py already gates.
         assert 100.0 < events[0]["miss_distance_m"] < 1000.0
 
+    def test_event_states_the_hard_body_radius_it_used(self):
+        """The UI shows the collision radius behind each Pc. It must be the
+        value compute_pc was actually given, in metres, not a display copy."""
+        r = _screen(_ENVISAT, [_ZENITH2])
+        assert r.status_code == 200
+        event = r.json()["events"][0]
+        assert event["hard_body_radius_m"] == pytest.approx(HARD_BODY_RADIUS_KM * 1000.0)
+
     def test_unassessable_candidate_does_not_500(self):
         """A co-located pair on its own must come back as a result, not an error."""
         r = _screen(_ENVISAT, [_CO_LOCATED])
@@ -153,7 +162,7 @@ class TestBatchIsolation:
         assert isinstance(entry.get("reason"), str) and entry["reason"]
 
         for numeric_field in ("pc", "miss_distance_m", "threat_level",
-                              "relative_speed_km_s"):
+                              "relative_speed_km_s", "hard_body_radius_m"):
             assert numeric_field not in entry, (
                 f"refused pair carries a {numeric_field} — no value may stand "
                 "in for one the physics declined to compute"
