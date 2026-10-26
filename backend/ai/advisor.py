@@ -18,6 +18,43 @@ logger = logging.getLogger(__name__)
 # Standard risk threshold (1 in 10,000)
 _RISK_THRESHOLD_PC = 1e-4
 
+# Models tried in order until one answers. Capacity is per model and it moves:
+# on 2026-10-27 gemini-3.1-flash-lite returned 503 "high demand" on every call,
+# and gemini-3.5-flash answered in ~2 s and then returned 503 minutes later,
+# while gemini-flash-lite-latest and gemini-3.5-flash-lite answered. One pinned
+# model makes the live demo depend on one model's load. gemini-2.5-* is retired
+# for new keys. GEMINI_MODEL (comma-separated) replaces this list.
+_DEFAULT_MODELS = ("gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-3.5-flash-lite")
+
+# Per-attempt limit, so three attempts stay inside the frontend's 60 s budget
+# (frontend/src/api/ai.js ADVISE_TIMEOUT_MS). An overloaded model usually
+# answers 503 in about a second; this bounds the one that hangs instead.
+_ATTEMPT_TIMEOUT_MS = 15_000
+
+
+def _model_chain() -> list:
+    """The models to try, in order: GEMINI_MODEL if set, else the defaults."""
+    raw = os.environ.get("GEMINI_MODEL", "")
+    models = [m.strip() for m in raw.split(",") if m.strip()]
+    return models or list(_DEFAULT_MODELS)
+
+
+def _parse_advice(text: str) -> AIAdvisorResponse:
+    """The model's JSON as a response; raises if it is not JSON."""
+    content_text = text.strip()
+    if content_text.startswith("```json"):
+        content_text = content_text.replace("```json", "").replace("```", "").strip()
+
+    data = json.loads(content_text)
+    return AIAdvisorResponse(
+        executive_summary=data.get("executive_summary", ""),
+        risk_assessment=data.get("risk_assessment", ""),
+        recommended_action=data.get("recommended_action", ""),
+        tradeoff_analysis=data.get("tradeoff_analysis", ""),
+        key_metrics=data.get("key_metrics", {}),
+        is_fallback=False,
+    )
+
 
 def generate_fallback_advice(request: AIAdvisorRequest) -> AIAdvisorResponse:
     """
@@ -103,7 +140,10 @@ def generate_fallback_advice(request: AIAdvisorRequest) -> AIAdvisorResponse:
 def get_ai_advice(request: AIAdvisorRequest) -> AIAdvisorResponse:
     """
     Generate decision support recommendation via Google Gemini API.
-    Falls back gracefully to offline rule-based advice if GEMINI_API_KEY is missing or request fails.
+
+    Tries each model in _model_chain() in turn; the first valid answer wins. Falls
+    back to the offline rule-based advice if GEMINI_API_KEY is missing or every
+    model fails — never to a guess.
     """
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
@@ -114,33 +154,32 @@ def get_ai_advice(request: AIAdvisorRequest) -> AIAdvisorResponse:
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=_ATTEMPT_TIMEOUT_MS),
+        )
         user_prompt = build_advisor_prompt(request)
-
-        response = client.models.generate_content(
-            model=os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite"),
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT_V1,
-                response_mime_type="application/json",
-                temperature=0.2,
-            ),
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT_V1,
+            response_mime_type="application/json",
+            temperature=0.2,
         )
-
-        content_text = response.text.strip()
-        if content_text.startswith("```json"):
-            content_text = content_text.replace("```json", "").replace("```", "").strip()
-
-        data = json.loads(content_text)
-        return AIAdvisorResponse(
-            executive_summary=data.get("executive_summary", ""),
-            risk_assessment=data.get("risk_assessment", ""),
-            recommended_action=data.get("recommended_action", ""),
-            tradeoff_analysis=data.get("tradeoff_analysis", ""),
-            key_metrics=data.get("key_metrics", {}),
-            is_fallback=False,
-        )
-
     except Exception as exc:
-        logger.warning("get_ai_advice: Google Gemini API call failed (%s). Falling back to offline advisor.", exc)
+        logger.warning("get_ai_advice: Gemini client could not start (%s). Falling back to offline advisor.", exc)
         return generate_fallback_advice(request)
+
+    for model in _model_chain():
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=user_prompt,
+                config=config,
+            )
+            advice = _parse_advice(response.text)
+            logger.info("get_ai_advice: answered by %s", model)
+            return advice
+        except Exception as exc:
+            logger.warning("get_ai_advice: %s failed (%s); trying the next model.", model, exc)
+
+    logger.warning("get_ai_advice: every Gemini model failed. Falling back to offline advisor.")
+    return generate_fallback_advice(request)
