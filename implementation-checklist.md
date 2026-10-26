@@ -6,12 +6,12 @@ How to use this file: check items off as they're genuinely done (validated, not 
 
 ## Phase 0 — Human homework (not code; do this before opening an editor)
 
-- [ ] Space-Track.org account created (registration can be slow — do this first)
-- [ ] Anthropic API key obtained, billing/credits confirmed
+- [x] Space-Track.org account created — in use: the live tracked set is served through it (CLAUDE.md §2)
+- [x] ~~Anthropic API key~~ — superseded: the AI layer is Gemini (`GEMINI_API_KEY` in `.env`); the provider decision is recorded in CLAUDE.md §2
 - [ ] Cesium Ion token obtained (only if Cesium is chosen over Three.js — see below)
 - [ ] Team role split decided (who owns physics / frontend / AI layer)
-- [ ] **Decision: Cesium vs. Three.js** for the 3D globe — record the decision and reasoning in `docs/architecture.md`
-- [ ] **Decision: primary object + candidate set** for conjunction screening scope — record in `docs/architecture.md` (suggested default: Envisat, since it's the main demo anyway)
+- [x] **Decision: Cesium vs. Three.js** for the 3D globe — Cesium; recorded in `docs/architecture.md` §2
+- [x] **Decision: primary object + candidate set** for conjunction screening scope — Envisat for the replay; the live console screens the whole tracked set; recorded in `docs/architecture.md` §2
 - [ ] Skimmed Foster/Chan/Alfano method at a conceptual level (enough to sanity-check the agent's explanation of it)
 - [ ] Memorized the two ground-truth validation numbers: Alfano Pc ≈ **0.10034**, Envisat Pc range **1.4×10⁻⁴–5.5×10⁻⁴**
 
@@ -21,8 +21,8 @@ How to use this file: check items off as they're genuinely done (validated, not 
 
 - [x] Repo initialized, `CLAUDE.md` and this checklist committed
 - [x] `.gitignore` covers `.env`, `__pycache__`, `node_modules`, data caches
-- [x] `.env.example` documents required vars (Anthropic key, Cesium Ion token if used, Space-Track credentials)
-- [x] Python env set up in `backend/`, `requirements.txt` created (`sgp4`, `skyfield`, `astropy`, `numpy`, `scipy`, `fastapi`, `pytest`, `anthropic`)
+- [x] `.env.example` documents required vars (Gemini key, Cesium Ion token if used, Space-Track credentials)
+- [x] Python env set up in `backend/`, `requirements.txt` created (`sgp4`, `skyfield`, `astropy`, `numpy`, `scipy`, `fastapi`, `pytest`, `google-genai`)
 - [x] Frontend scaffolded in `frontend/` (React + chosen 3D library installed)
 - [x] Empty folder structure created per CLAUDE.md Section 4 (`backend/physics/`, `backend/ai/`, `backend/api/`, `tests/`, `docs/`, `scripts/`, `demo/`)
 - [x] `docs/project-doc.md` and `docs/pitch-script.md` copied in from source docs
@@ -67,11 +67,11 @@ How to use this file: check items off as they're genuinely done (validated, not 
 - [x] `backend/physics/maneuver.py` — instantaneous delta-V modeling, pre/post-maneuver Pc comparison
 - [x] `backend/ai/schema.py` — structured input/output contracts (pydantic models) for the AI layer
 - [x] `backend/ai/prompts.py` — versioned prompt templates (explanation / tradeoff / recommendation)
-- [x] `backend/ai/advisor.py` — Claude API integration with strict numerical integrity enforcement
+- [x] `backend/ai/advisor.py` — Gemini integration (originally specified as the Claude API; see CLAUDE.md §2) with strict numerical integrity enforcement
 - [x] `backend/api/main.py` — FastAPI routes tying physics + AI together
-- [x] Confirm: physics endpoints work with zero AI/network calls (test by unplugging the Anthropic key temporarily)
+- [x] Confirm: physics endpoints work with zero AI/network calls (test by unsetting the Gemini key temporarily)
 
-🔒 **Gate: AI layer must degrade gracefully (physics dashboard still usable) when the AI call fails or times out, before Phase 5 starts.** ✅ PASSED — 49/49 pytest tests pass. Deterministic rule-based fallback guarantees zero-latency, 100% offline availability for all physics and API endpoints when `ANTHROPIC_API_KEY` is missing or network fails.
+🔒 **Gate: AI layer must degrade gracefully (physics dashboard still usable) when the AI call fails or times out, before Phase 5 starts.** ✅ PASSED — 49/49 pytest tests pass. Deterministic rule-based fallback guarantees zero-latency, 100% offline availability for all physics and API endpoints when `GEMINI_API_KEY` is missing or network fails.
 
 ---
 
@@ -95,9 +95,9 @@ How to use this file: check items off as they're genuinely done (validated, not 
       `npm run check:api` live probe (verified in both directions: exit 0
       against a running backend, exit 1 with an actionable hint when stopped).
       Console shell renders real ONLINE/OFFLINE state from `GET /health`,
-      confirmed in a headless-Chrome render against the live API. **No physics
-      numbers are rendered yet** — every other panel is an explicitly labelled
-      pending region. Also rewrote `docs/api_contract.md` from source (it had
+      confirmed in a headless-Chrome render against the live API. (At this step no
+      physics numbers were rendered yet; every other panel was a labelled pending
+      region. Superseded by the items below.) Also rewrote `docs/api_contract.md` from source (it had
       documented five endpoints that never existed, with fabricated physics
       numbers in its examples).
 - [x] 3D globe rendering live TLE data — Cesium globe (freely rotatable), real
@@ -115,6 +115,9 @@ How to use this file: check items off as they're genuinely done (validated, not 
       set" assumed the Envisat pair; what ships is a general live-tracking set,
       which matches the system's actual purpose (see the note below). Works with
       no Cesium Ion token via the bundled Natural Earth II imagery fallback.
+      **Superseded:** the globe now draws the server-owned tracked set (~700
+      objects, `/api/tracking/objects`), and the console runs on the real clock by
+      default; the x120 clock above is the earlier behaviour.
 - [x] T-minus countdown UI component — `frontend/src/components/common/TMinus.jsx`,
       driven by pure arithmetic in `frontend/src/lib/replay.js` (32 unit tests).
       Two clocks, because a countdown is only meaningful against a clock that
@@ -132,27 +135,13 @@ How to use this file: check items off as they're genuinely done (validated, not 
       Pc 5.69e-5; the advisor panel renders a live Gemini answer
       (**AI: LIVE**) that quotes those figures unchanged. The flow still
       needs clicks (burn, ask) by design — see `demo/demo_checklist.md` §3.
-      Earlier status follows —
-      **AI step wired (2026-10-05), pending a visual check.** `AdvisorPanel` on the
-      replay and the live console, via `useAiAdvice`, asked on demand with the
-      simulated burn attached. Verified: `/api/ai/advise` returns a live
-      Gemini answer (`is_fallback: false`) with the key supplied only by `.env`;
-      130+ unit tests, build and lint green; backend 112/112. NOT yet verified:
-      the panel rendered in a browser. Model default is now `gemini-3.1-flash-lite`
-      (`gemini-2.5-flash` is closed to new keys). Earlier status follows —
-      **3 of 4 parts done.** The `Envisat replay` tab is a live view
-      (`frontend/src/pages/Replay.jsx`): both objects propagated onto their own
-      globe on a looping clock around the real TCA, the countdown above, and
-      all four archived prediction days re-run through
-      `/api/physics/screening`, reproducing 329 / 234 / 152 / 269 m and Pc
-      2.74e-4 / 1.11e-3 / 1.93e-3 / 6.59e-4 — agreeing with
-      `docs/validation-notes.md` §4.4 to under a metre. **Not ticked because
-      the AI recommendation is not wired** (build-order step 6); its panel is
-      an explicitly labelled pending region. Note also that the "Pc trend"
-      wording anticipated a converging estimate — the four days do not
-      converge monotonically, so they are presented as four independent
-      predictions that agree, which is the paper's own framing. See
-      `docs/frontend-implementation-plan.md` §12.
+      History: the replay view landed first without the AI step (build-order
+      step 6), then `AdvisorPanel` was added on the replay and the live console
+      (`useAiAdvice`, asked on demand with the simulated burn attached; model
+      default `gemini-3.1-flash-lite`, now `gemini-3.5-flash`, because `gemini-2.5-flash` closed to new
+      keys). The four days do not converge monotonically, so they are presented
+      as four independent predictions that agree, which is the paper's own
+      framing — see `docs/frontend-implementation-plan.md` §12.
 - [ ] Cosmos 2221 wired as secondary/backup scenario
 
 🔒 **Gate: full Envisat demo flow must run start-to-finish without manual intervention before Phase 6 starts.**
@@ -184,11 +173,17 @@ How to use this file: check items off as they're genuinely done (validated, not 
       presenting laptop's 1536×960 full screen: every demo panel fits without
       rail scrolling, type ≥ 11 px, text contrast ≥ 4.5:1 (commits from
       `ebc7f64`).
-- [ ] `docs/validation-notes.md` written (how we know our numbers are right — Alfano, frame check, Envisat comparison)
-- [ ] `demo/recorded_fallback.mp4` recorded (re-record if any pipeline change affects demo numbers)
+- [x] `docs/validation-notes.md` written (how we know our numbers are right — Alfano, frame check, Envisat comparison) — exists with all three; §4.5 added 2026-10-26 for the live check
+- [ ] `demo/fallback/recorded_fallback.mp4` recorded (re-record if any pipeline change affects demo numbers)
 - [x] `demo/demo_checklist.md` written (pre-demo run-through steps) — 2026-10-26
 - [ ] Full team rehearsal of the live demo + fallback switch
-- [ ] README updated with the physics/AI split stated up front
+- [ ] README updated with the physics/AI split stated up front — there is no root `README.md` yet (`backend/README.md` exists)
+- [x] Presenter tooling and live-console polish, each on its own commit (2026-10-26): restart persistence
+      (`219421c`), schedule line (`1207097`), live Validated badge (`0ffbed2`), hard-body radius stated
+      (`d2e5732`), three-burn comparison (`a71e407`), AI answer cache (`81df95f`), replay scrubber and
+      shortcuts (`8b4bfea`), object search (`b55f317`), show-on-globe (`a528b71`), event filters
+      (`7dc1a33`), glossary tooltips (`be04d38`), layout reset (`166d53e`). Evidence: 139 backend and 267
+      frontend tests pass, lint clean, build OK; both tabs checked in the browser at 1536×960.
 
 ---
 

@@ -9,7 +9,7 @@ This file is the project's persistent context for Claude Code (or any coding age
 **Orbital Risk Advisor** is a debris collision-risk decision-support platform, built for a space-exploration hackathon judged by professionals (technical judges expected). It has two halves that must remain strictly separated:
 
 1. **Physics pipeline** (Python) — real orbital mechanics. TLE ingest → SGP4 propagation → frame transforms → conjunction screening → TCA refinement → collision probability (Pc) → simplified maneuver modeling. This is deterministic, validated, testable code. **No AI/LLM is involved anywhere in this pipeline.**
-2. **AI layer** (LLM via Claude API) — takes the _already-computed, already-validated_ output of the physics pipeline (Pc, miss distance, covariance summary, maneuver options) and produces plain-language explanation, tradeoff comparison, and a recommendation. **The AI never computes, estimates, overrides, or "sanity-checks" a physics number. It only narrates numbers it is handed.**
+2. **AI layer** (LLM — Gemini; see §2) — takes the _already-computed, already-validated_ output of the physics pipeline (Pc, miss distance, covariance summary, maneuver options) and produces plain-language explanation, tradeoff comparison, and a recommendation. **The AI never computes, estimates, overrides, or "sanity-checks" a physics number. It only narrates numbers it is handed.**
 
 The core credibility claim of this project, repeated in the pitch, is: _"Real physics computes the risk. AI makes the risk understandable and actionable."_ Every architectural decision should protect this claim. If a proposed change would blur the line between the two halves, don't make it — ask first.
 
@@ -66,7 +66,7 @@ The project doc already commits to these scope reductions. Do not silently expan
 - Never hardcode or invent citation-worthy scientific claims inside LLM prompts (e.g., don't have the prompt assert thresholds or formulas as fact unless they're sourced in `/docs`).
 - Keep prompts and the structured-input schema version-controlled and reviewed like code, not tuned ad hoc in a notebook and forgotten.
 - Handle LLM API failures gracefully in the UI (timeout, rate limit, malformed response) — the physics dashboard must remain usable even if the AI layer is down. This also protects the live demo.
-- Never put an Anthropic API key or any secret in source, commits, or client-side code. Use environment variables and confirm `.env` is gitignored before the first commit.
+- Never put an LLM API key (`GEMINI_API_KEY`) or any other secret in source, commits, or client-side code. Use environment variables and confirm `.env` is gitignored before the first commit.
 
 ### 1.7 General engineering guardrails (apply regardless of domain)
 
@@ -109,13 +109,13 @@ primary; Space-Track.org secondary; committed offline set as the floor
 > login. Never poll it from a loop or a request thread. Tests must never reach
 > it — `tests/conftest.py` blocks it suite-wide. The offline set is now
 > regenerated from Space-Track by default (513 objects, capped per group).
-**AI layer:** Google Gemini (`gemini-2.5-flash`), structured JSON in/out — see the provider note below
+**AI layer:** Google Gemini (`gemini-3.5-flash`, then `gemini-flash-lite-latest`, then `gemini-3.5-flash-lite` — the next is tried when one is overloaded; comma-separated `GEMINI_MODEL` overrides), structured JSON in/out — see the provider note below
 **Frontend:** React + Vite, CesiumJS (3D globe), plain per-component CSS, vitest
 **Testing:** `pytest` (backend), `vitest` (frontend), with the Alfano case as a hardcoded regression test
 
 Don't introduce a different orbital mechanics library, a different frontend framework, or swap the LLM provider without discussing it — these are pitch-relevant decisions, not incidental ones.
 
-**LLM provider (decided 2026-08-31).** This file originally specified the Claude API; the implementation in `backend/ai/advisor.py` uses Gemini 2.5 Flash via `GEMINI_API_KEY`. That divergence was raised and the human chose to **keep Gemini** rather than switch before the demo. This is now the recorded decision, not an unnoticed drift — the AI layer's contract (structured JSON in, structured JSON out, narrates numbers it is handed, computes nothing) is provider-independent and unchanged. The deterministic offline fallback stays in place so the physics dashboard survives an AI outage on stage. Don't "fix" this back to Anthropic without asking.
+**LLM provider (decided 2026-08-31).** This file originally specified the Claude API; the implementation in `backend/ai/advisor.py` uses Gemini via `GEMINI_API_KEY` (originally `gemini-2.5-flash`; it moved to `gemini-3.1-flash-lite` when that closed to new API keys — commit `c64b206` — and on 2026-10-27 to an ordered list led by `gemini-3.5-flash`, because 3.1 Flash-Lite returned 503 "high demand" on every call and 3.5 Flash itself returned 503 minutes after answering. Model-name changes, not provider changes). That divergence was raised and the human chose to **keep Gemini** rather than switch before the demo. This is now the recorded decision, not an unnoticed drift — the AI layer's contract (structured JSON in, structured JSON out, narrates numbers it is handed, computes nothing) is provider-independent and unchanged. The deterministic offline fallback stays in place so the physics dashboard survives an AI outage on stage. Don't "fix" this back to Anthropic without asking.
 
 ---
 
@@ -242,10 +242,11 @@ would look identical on stage and collapse under one judge's question.
    is why the exact TCA positions are carried separately and why a miss
    distance must never be measured off the arcs.
 
-   So it is drawn twice. The globe carries both arcs — unflown in the event's
-   risk colour, flown in the accent, since a planned burn is a proposed action
-   and not a threat level — which shows WHERE the burn and the encounter sit in
-   the orbit. `ManeuverPanel` then draws the encounter itself to scale, with a
+   So it is drawn twice. The globe carries the flown arc in the accent (a
+   planned burn is a proposed action, not a threat level) from a labelled
+   "Burn" marker — which shows WHERE the burn and the encounter sit in the
+   orbit. (Until 2026-10-26 the unflown arc was drawn too; it lies on the
+   primary's ring, and the two together read as a confusing double band.) `ManeuverPanel` then draws the encounter itself to scale, with a
    labelled scale bar: the three TCA positions projected into their own plane,
    which is an isometry, so every distance on the diagram is the true distance
    and nothing is exaggerated to look more dramatic. The labelled numbers still
@@ -257,9 +258,12 @@ would look identical on stage and collapse under one judge's question.
    the injected case is not highlighted there.
 5. ~~Orbit tracks are not rendered at all yet — only point markers.~~ **DONE.**
    Selecting an event draws one revolution of each object's orbit
-   (`frontend/src/lib/orbitTrack.js`), in the event's risk colour, primary
-   solid and secondary dashed so shape carries identity while colour keeps
-   meaning risk. Sampling in TEME and rotating every sample by the SAME
+   (`frontend/src/lib/orbitTrack.js`), primary solid blue and secondary
+   dashed violet (`--orbit-*` identity colours, decided with the human
+   2026-10-26 because two rings in one risk colour could not be told apart;
+   the hues sit off the risk scale and a unit test pins that). The event's
+   risk colour stays on the badge, the TCA marker — labelled with the
+   pipeline's miss distance — and the line joining the pair. Sampling in TEME and rotating every sample by the SAME
    instant's GMST is what makes it a closed ring rather than a ground track,
    and it is what puts the marker exactly on its own ring — pinned by a unit
    test, because a ring the marker visibly floats off is worse than no ring.
@@ -306,6 +310,26 @@ would look identical on stage and collapse under one judge's question.
    numbers. When timing passes, keep headless Chrome off the machine — its
    software rendering of 700 objects tripled one pass's wall time.
 
+### 5.4 Added since the blockers above (2026-10)
+
+All of it follows the same guardrails: the physics pipeline produces every figure, the AI only narrates.
+
+- **Restart persistence.** The last completed pass is saved to `backend/.cache/last_screening_pass.json`
+  (gitignored) and served again, marked `restored`, until a fresh pass replaces it. A pass whose window
+  has ended is not restored; restored RED events do not re-alert.
+- **Schedule line.** The event list shows "Pass running m:ss · last took …" or "Next pass in mm:ss". There
+  is deliberately no progress percentage: a real one needs progress hooks inside the validated screening
+  module, and an estimate shown as progress would be an invented number.
+- **Live "Validated" badge.** `GET /api/validation/status` re-runs the Alfano case and the four Envisat
+  days against the regression tests' own bounds; the header badge shows the result.
+- **Hard-body radius is stated.** Every event carries `hard_body_radius_m` (14.5 m, one value for every
+  pair — the Envisat validation value) and the UI says so. Per-object sizing is not implemented.
+- **Burn comparison.** The console and the replay can simulate −2 / −4 / −8 cm/s side by side and hand all
+  three to the AI. Propellant assumes Envisat's 8,200 kg for every event, and a debris-only event still
+  offers a burn although debris cannot manoeuvre — both known, both flagged in `demo/presentation_guide.md`.
+- **Presenter tooling.** Show-on-globe for an event's TCA, object search, event filters, glossary tooltips,
+  a replay scrubber with keyboard shortcuts, a per-session cache of live AI answers, and a layout reset.
+
 ### What the screening architecture actually became
 
 Measured, not assumed. A full all-pairs pass over ~700 objects is roughly
@@ -330,6 +354,11 @@ Measured on 695 real objects over 24 h: 241,165 pairs evaluated, 5.1% gated,
 33 real conjunctions found when refining the closest 300. **Threat spread from
 live data: 0 RED, 1 YELLOW, 32 GREEN** — which is why §5.1's populated list
 pairs real detections with injected historical cases for the high-risk rows.
+
+Re-measured 2026-10-26 on 698 live objects (Space-Track): 243,253 pairs evaluated, 12,430 gated, 300
+refined (`truncated`), 44 events, 2 high-risk. The first pass after a restart took ~80 s and a later one
+~170 s, so treat pass duration as machine-load dependent. Live elevated-risk events now exist, so the
+injected Envisat row is a fallback for the console's opening view, not the only source of high-risk rows.
 
 `PHYSICS_TRACE=1` re-enables the per-stage prints (`backend/physics/trace.py`);
 they are off by default because all-pairs screening would otherwise emit tens

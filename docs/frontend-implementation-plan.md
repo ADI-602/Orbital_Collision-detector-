@@ -5,8 +5,13 @@ This is the working plan for Phase 5 ("Frontend + integration") of
 integration, component structure, build order) and the UX/screen structure,
 so it can double as a build checklist and a Figma reference.
 
-The backend (Phases 1-4) is complete and validated — 49/49 tests passing.
-Nothing here changes backend code; this doc is the frontend build plan only.
+The backend (Phases 1-4) was complete and validated when this plan was written (49/49 tests then; 139
+backend and 267 frontend tests pass as of 2026-10-26). This doc is the frontend build plan only.
+
+> **Status, 2026-10-26.** Every build-order step in §8 is done except the Cosmos 2221 scenario, which is
+> not built. §5–§7 are the original plan and differ from what shipped (there is no landing page, the AI
+> panel is `AdvisorPanel`, the maneuver UI is `ManeuverPanel` and not a modal, state is passed as props).
+> **§16 describes the build as it stands.** §11–§15 are dated build logs and are left as written.
 
 ---
 
@@ -43,15 +48,17 @@ than silently presenting rule-based text as if it were live AI output.
 
 1. ~~**`docs/api_contract.md` is stale.**~~ **RESOLVED (Phase 5 step 1).**
    `docs/api_contract.md` has been rewritten from `backend/api/main.py` and
-   verified against commit `bfe5bd4`. All response examples in it are now
+   verified against commit `bfe5bd4`, and brought up to date again on
+   2026-10-26 (twelve routes, live examples). All response examples in it are
    captured from a live server rather than invented. It is again a usable
    source of truth; re-verify it whenever a route changes.
-2. **AI provider mismatch.** `CLAUDE.md`, `backend/README.md`, and
-   `.env.example` all reference `ANTHROPIC_API_KEY` (Claude), but the actual
-   code in `backend/ai/advisor.py` calls **Google Gemini**
-   (`gemini-2.5-flash`) via `GEMINI_API_KEY`/`GOOGLE_API_KEY`. The frontend
-   should never assume which provider is live — it only needs to trust the
-   response shape (`AIAdvisorResponse`) and the `is_fallback` flag.
+2. ~~**AI provider mismatch.**~~ **RESOLVED (2026-08-31).** `CLAUDE.md`, `backend/README.md`
+   and `.env.example` originally referenced `ANTHROPIC_API_KEY` (Claude), but
+   `backend/ai/advisor.py` calls **Google Gemini** via `GEMINI_API_KEY`/`GOOGLE_API_KEY`.
+   The human chose to keep Gemini and the docs now say so. The default model is
+   `gemini-3.5-flash` (`gemini-2.5-*` retired, `gemini-3.1-flash-lite` overloaded; `GEMINI_MODEL`
+   overrides). The frontend should still never assume which provider is live — it only
+   needs to trust the response shape (`AIAdvisorResponse`) and the `is_fallback` flag.
 3. **No live-satellite-position endpoint exists.** There is no
    `/api/satellites/live` and no endpoint that returns a pre-computed replay
    timeline. The frontend must source TLEs from `/api/conjunctions/envisat`
@@ -83,9 +90,9 @@ than silently presenting rule-based text as if it were live AI output.
    batch form returns 500 every time and no candidate is ever assessed.
    Step 4 works around this in the frontend by screening **one candidate per
    request** (`useScreening.js`), which costs the backend the same total work
-   and turns a refused pair into one labelled row. **The backend-side fix —
-   skipping an unusable candidate instead of failing the batch — is still
-   open**, and is worth doing before the candidate set grows.
+   and turns a refused pair into one labelled row. **RESOLVED:** the backend now isolates per-candidate failures
+   (CLAUDE.md §5.3 blocker 2), and `useScreening.js` no longer screens at all —
+   it reads the scheduled pass.
 
 ---
 
@@ -100,6 +107,8 @@ Confirmed from `backend/api/main.py` and `backend/ai/schema.py`:
 | `/api/physics/tca` | POST | TCA + miss distance from two raw TLEs | body: `{primary: {name, line1, line2}, secondary: {name, line1, line2}, start_utc_iso, search_duration_hours}` — **corrected**; the earlier `{tle1_line1, ...}` shape in this table was wrong |
 | `/api/physics/screening` | POST | screen candidate TLEs vs. primary | returns Pc/miss-distance/threat-level per candidate |
 | `/api/physics/maneuver` | POST | simulate a delta-V burn | returns pre/post Pc, fuel used, post-burn miss distance |
+| `/api/tracking/objects`, `/api/monitoring/status`, `/api/monitoring/events`, `/api/monitoring/refresh` | GET, GET, GET, POST | the server-owned tracked set and the scheduled screening pass | added after this table was written; see `docs/api_contract.md` §8. `/api/monitoring/alerts` exists but the frontend deliberately does not use it |
+| `/api/validation/status` | GET | live known-answer checks (Alfano, Envisat) | feeds the header "Validated" badge; `docs/api_contract.md` §9 |
 | `/api/ai/advise` | POST | AI decision support (Gemini, degrades to rule-based fallback) | body: `ConjunctionContext` + `ManeuverOption[]`; response: `AIAdvisorResponse` (`executive_summary`, `risk_assessment`, `recommended_action`, `tradeoff_analysis`, `key_metrics`, `is_fallback`) |
 
 All physics POST endpoints take **raw TLE line1/line2 pairs** in the body —
@@ -256,12 +265,15 @@ Maps to `implementation-checklist.md` Phase 5 items — work top to bottom:
 5b. ~~Event list reads the scheduled screening pass~~ ✅ **DONE** — the panel
    is wired to `GET /api/monitoring/events` instead of running its own
    screening. See §13.
-6. AI assistant panel wired to `/api/ai/advise`, with fallback-mode badge
+6. ~~AI assistant panel wired to `/api/ai/advise`, with fallback-mode badge~~ ✅ **DONE** —
+   `AdvisorPanel` (console and replay): AI: LIVE / OFFLINE ADVISOR chip, asked on demand and
+   automatically after a simulated burn, with a per-session cache of live answers.
 7. ~~Maneuver simulation modal wired to `/api/physics/maneuver`~~ ✅ **DONE** —
    `ManeuverPanel`, on the replay view and the live console. Not a modal: see
    §15 for why the encounter needed its own always-visible scale.
-8. Cosmos 2221 wired as secondary scenario
-9. Empty/loading/error states + polish pass
+8. Cosmos 2221 wired as secondary scenario — **not done**; needs a sourced TLE pair first (§10)
+9. ~~Empty/loading/error states + polish pass~~ ✅ **DONE** — polish pass measured at 1536×960 full
+   screen on 2026-10-26 (`implementation-checklist.md`, Phase 6).
 
 🔒 Gate (per checklist): the full Envisat demo flow must run start-to-finish
 without manual intervention before calling Phase 5 done.
@@ -687,3 +699,48 @@ refused with a reason rather than sent to the endpoint to fail.
 | Globe arcs | flown arc present in accent along the risk-coloured ring (124 accent pixels across the orbit's span, checked in the capture) ✅ |
 | Browser console | no errors or exceptions ✅ |
 
+
+---
+
+## 16. As built (2026-10-26)
+
+What the frontend is now, replacing the proposals in §5–§7. Every figure on screen comes from the
+backend; the browser propagates objects for display only.
+
+**Pages.** `pages/Console.jsx` (live, general-purpose) and `pages/Replay.jsx` (the Envisat 2004 proof).
+Both are floating `FloatingPanel` cards over a full-screen Cesium globe; panel sizes are remembered in
+`localStorage` (`ora.panel.*`) and the header's **Reset layout** clears them. Designed and measured for a
+1536×960 full-screen 16" laptop.
+
+**Panels** (`components/panels/`): `StatusHeader` (tabs, backend chip, `ValidationBadge`, reset),
+`EventList` (scheduled-pass list, filter chips, schedule line, SCREEN NOW / REFRESH), `EventDetail`
+(risk badge, Pc, miss, TCA, thresholds, hard-body radius), `ManeuverPanel` (single burn, three-burn
+comparison, to-scale encounter diagram), `AdvisorPanel` (AI), `SelectedObjectPanel`, `AssetStrip`,
+`PredictionTable` and `ReplayScrubber` (replay), `ConjunctionAlerts` (toasts).
+
+**Hooks** (`hooks/`): `useLiveSatellites` (server tracked set + in-browser SGP4), `useScreening` (reads
+`/api/monitoring/*`, polls every 30 s), `useConjunctionAlerts`, `useManeuver`, `useAiAdvice`,
+`useEnvisatReplay`, `useValidation`, `useHealth`, `useMissionClock`.
+
+**Pure logic** (`lib/`, all unit-tested): `conjunctions`, `eventFilter`, `objectSearch`, `orbitTrack`
+(rings in the TEME frame rotated by one instant's GMST, so a marker sits on its own ring), `replay`
+(clock arithmetic and published ground truth), `monitoring` (pass coverage and schedule wording),
+`advice` and `adviceCache`, `maneuver`, `glossary`, `validation`, `panelLayout`.
+
+**Data flow.**
+
+| Surface | Endpoint(s) |
+|---|---|
+| App load | `GET /health`, `GET /api/tracking/objects`, `GET /api/validation/status` |
+| Event list | `GET /api/monitoring/events` (served from cache; status polled every 30 s); `POST /api/monitoring/refresh` for SCREEN NOW |
+| Envisat replay | `GET /api/conjunctions/envisat` for the TLEs, then `POST /api/physics/screening` once per prediction day |
+| Burn planning | `POST /api/physics/maneuver` (one call per burn; three for the comparison) |
+| AI advisor | `POST /api/ai/advise` with the pipeline's figures and the simulated burn(s) |
+
+**Clock.** The console runs on the real clock by default and names the feed provider; the replay runs a
+looping 2004 clock at ×60 (§12).
+
+**Known gaps.** The Cosmos 2221 scenario is not built; `components/common/GaugeCard.jsx` is no longer
+used; the fallback video is not recorded. Limits worth stating on stage (single 14.5 m hard-body radius,
+Envisat's 8,200 kg for every event's propellant, burns offered for debris-only events) are listed in
+`demo/presentation_guide.md` §F.

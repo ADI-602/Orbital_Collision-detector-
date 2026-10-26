@@ -1,6 +1,6 @@
 # Orbital Risk Advisor — API Contract
 
-**Transcribed from `backend/api/main.py` and `backend/ai/schema.py`, verified against commit `bfe5bd4`.**
+**Transcribed from `backend/api/main.py` and `backend/ai/schema.py`. Brought up to date 2026-10-26 against the running server (build `7fa3ef1`).**
 
 This document describes what the backend **actually serves today**, field by
 field. Every response example below was captured from a live server, not
@@ -25,7 +25,7 @@ written by hand — there are no illustrative or invented numbers in this file.
 
 ### Starting the backend
 
-**Must be launched from the repo root.** `backend/api/main.py:26` does
+**Must be launched from the repo root.** `backend/api/main.py` does
 `from tests.fixtures.envisat_tles import ...`, so the repo root has to be on
 `sys.path` or the app fails at import time.
 
@@ -44,13 +44,12 @@ backend\.venv\Scripts\python -m pytest tests/ -q
 
 Use `python -m pytest`, **not** the `pytest.exe` shim. The shim puts
 `tests/` on `sys.path` rather than the repo root, so `import backend` fails
-with `ModuleNotFoundError: No module named 'backend'`. Expected result:
-56 passed.
+with `ModuleNotFoundError: No module named 'backend'`. Expected result: every test green (139 passed on 2026-10-26).
 
 ### CORS
 
 ```python
-# backend/api/main.py:38-44
+# backend/api/main.py (CORSMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -93,23 +92,23 @@ wrong one. The frontend handles them in one place
 |---|---|---|
 | `tca_utc_iso` | `tca_iso` | plain rename |
 | `maneuver_recommended` | `recommended` | plain rename |
-| hard-body radius `0.0145` **km** (hardcoded, `main.py:224`) | `hard_body_radius_m` = `14.5` **m** | km → m, factor 1000 |
+| hard-body radius `0.0145` **km** (hardcoded as `HARD_BODY_RADIUS_KM` in `assessment.py`) | `hard_body_radius_m` = `14.5` **m** | km → m, factor 1000 |
 
 ---
 
 ## 3. Endpoints
 
-Six routes. **No route takes a query parameter** — every input is a JSON body.
+Six routes are described in this section; tracking and monitoring are in §8 and the validation check is in §9 — twelve in all. **No route takes a query parameter** — every input is a JSON body.
 There is no "look up by NORAD ID" convenience: the physics endpoints take raw
 TLE line pairs.
 
-`TLEInput`, used throughout (`main.py:49-52`) — all three fields required:
+`TLEInput`, used throughout — all three fields required:
 
 ```json
 { "name": "ENVISAT", "line1": "1 27386U ...", "line2": "2 27386 ..." }
 ```
 
-### 3.1 `GET /health`  — `main.py:81-88`
+### 3.1 `GET /health`
 
 Reachability probe only. All three values are hardcoded literals; a 200 here
 says uvicorn is serving, nothing about whether the physics pipeline works.
@@ -118,13 +117,13 @@ says uvicorn is serving, nothing about whether the physics pipeline works.
 { "status": "ok", "service": "Orbital Risk Advisor API", "version": "1.0.0" }
 ```
 
-### 3.2 `GET /api/conjunctions/envisat` — `main.py:91-133`
+### 3.2 `GET /api/conjunctions/envisat`
 
 Ground-truth TLE set for the historical October 2004 Envisat / Zenith-2
 conjunction.
 
 ⚠️ **Returns TLEs only.** There is no miss distance and no Pc in this
-response, despite the FastAPI docstring at `main.py:95` claiming it includes
+response, despite the route's docstring claiming it includes
 them. To get per-day physics numbers, POST each day's pair to
 `/api/physics/tca` or `/api/physics/screening`.
 
@@ -153,11 +152,11 @@ them. To get per-day physics numbers, POST each day's pair to
 byte-identical (`tests/fixtures/envisat_tles.py:32-39`) — those days differ
 only in the Zenith-2 TLE, so do not deduplicate on the primary.
 
-### 3.3 `POST /api/physics/tca` — `main.py:136-173`
+### 3.3 `POST /api/physics/tca`
 
 Refine time of closest approach and miss distance for one pair.
 
-Request (`main.py:55-59`):
+Request (`TCAPhysicsRequest`):
 
 | Field | Type | Required | Default |
 |---|---|---|---|
@@ -187,12 +186,12 @@ state. See §4 for how to distinguish it from a routing 404.
 The search window is scanned de-aliased, so widening it cannot hide a
 close approach — see §5.
 
-### 3.4 `POST /api/physics/screening` — `main.py:176-246`
+### 3.4 `POST /api/physics/screening`
 
 Screen candidates against a primary. **Never returns 404**; no threats means
 `events: []`.
 
-Request (`main.py:62-67`):
+Request (`ScreeningPhysicsRequest`):
 
 | Field | Type | Required | Default |
 |---|---|---|---|
@@ -203,7 +202,7 @@ Request (`main.py:62-67`):
 | `coarse_threshold_km` | float | no | `50.0` |
 
 `coarse_threshold_km` is forwarded as `threshold_km`, the **fine-scan**
-flagging threshold (`main.py:197`), despite the name. The only value
+flagging threshold, despite the name. The only value
 exercised by the test suite is `500.0`
 (`tests/test_api_endpoints.py:61-77`).
 
@@ -217,31 +216,35 @@ Response:
     {
       "secondary_name": "ZENITH-2 DEBRIS",
       "tca_utc_iso": "2004-10-22T05:10:37Z",
-      "miss_distance_m": 268.2,
+      "miss_distance_m": 268.9,
       "pc": 0.000659,
-      "relative_speed_km_s": 14.775,
-      "threat_level": "RED"
+      "relative_speed_km_s": 14.778,
+      "threat_level": "RED",
+      "hard_body_radius_m": 14.5
     }
-  ]
+  ],
+  "rejected_candidates": []
 }
 ```
 
-`threat_level` (`main.py:233`) is a closed set: **`RED`** at `pc >= 1e-4`,
+`threat_level` (`threat_level()` in `backend/api/assessment.py`) is a closed set: **`RED`** at `pc >= 1e-4`,
 **`YELLOW`** at `pc >= 1e-5`, **`GREEN`** otherwise.
 
 `events.length` may be **less than** `candidates_screened` — candidates that
-do not flag, or whose refined TCA comes back empty, are silently skipped
-(`main.py:207-208`). Match results on `secondary_name`, never on array index.
+do not flag, or whose refined TCA comes back empty, are silently skipped. Match results on `secondary_name`, never on array index.
 Name uniqueness is the caller's responsibility; the API echoes back whatever
 `name` was sent.
 
-Hard-body radius is hardcoded to `0.0145` km (`main.py:224`).
+Hard-body radius is one constant for every pair, `HARD_BODY_RADIUS_KM = 0.0145` (14.5 m, the value the
+Envisat validation was run against), in `backend/api/assessment.py`. Each assessed event echoes it as
+`hard_body_radius_m: 14.5` so a client can state the assumption next to the Pc instead of leaving it implicit.
+It is not a per-object size.
 
-### 3.5 `POST /api/physics/maneuver` — `main.py:249-300`
+### 3.5 `POST /api/physics/maneuver`
 
 Simulate an impulsive collision-avoidance burn.
 
-Request (`main.py:70-76`):
+Request (`ManeuverPhysicsRequest`):
 
 | Field | Type | Required | Default |
 |---|---|---|---|
@@ -253,7 +256,7 @@ Request (`main.py:70-76`):
 | `sat_mass_kg` | float | no | `8200.0` |
 
 The endpoint does not trust `tca_utc_iso` exactly — it re-solves TCA within
-±2 h of it (`main.py:260-261`).
+±2 h of it.
 
 Response — captured live, Oct 22 pair, defaults as above:
 
@@ -263,11 +266,11 @@ Response — captured live, Oct 22 pair, defaults as above:
   "secondary_name": "ZENITH-2 DEBRIS",
   "delta_v_cm_s": -4.0,
   "lead_time_minutes": 50.0,
-  "pre_burn_miss_distance_m": 268.29,
-  "post_burn_miss_distance_m": 563.13,
+  "pre_burn_miss_distance_m": 268.91,
+  "post_burn_miss_distance_m": 569.76,
   "pre_burn_pc": 0.00065905,
   "post_burn_pc": 0.00005691,
-  "risk_reduction_pct": 91.36,
+  "risk_reduction_pct": 91.37,
   "fuel_consumed_kg": 0.152,
   "maneuver_recommended": true,
   "tracks": { ... }
@@ -319,14 +322,14 @@ the CW linearisation holds for about one orbit after the burn, and past that
 the along-track term grows without bound, so the window is clipped and says so
 rather than extrapolating a trajectory the model cannot assert.
 
-### 3.6 `POST /api/ai/advise` — `main.py:303-309`
+### 3.6 `POST /api/ai/advise`
 
 The only route with a declared `response_model`, so its response body is
 exactly the six fields below.
 
 **This endpoint always returns 200.** There is no raise path: if the model
 call fails or no API key is present, it degrades to a deterministic
-rule-based advisor (`backend/ai/advisor.py:144-146`). HTTP status tells you
+rule-based advisor (`get_ai_advice` in `backend/ai/advisor.py`). HTTP status tells you
 nothing about whether a live model answered — `is_fallback` is the only
 signal.
 
@@ -338,7 +341,7 @@ Request — `AIAdvisorRequest` (`schema.py:35-42`):
     "primary_name": "ENVISAT",
     "secondary_name": "ZENITH-2 DEBRIS",
     "tca_iso": "2004-10-22T05:10:35Z",
-    "miss_distance_m": 268.29,
+    "miss_distance_m": 268.91,
     "pre_burn_pc": 0.00065905,
     "relative_speed_km_s": 14.775,
     "primary_alt_km": 790.0,
@@ -348,9 +351,9 @@ Request — `AIAdvisorRequest` (`schema.py:35-42`):
     {
       "delta_v_cm_s": -4.0,
       "lead_time_minutes": 50.0,
-      "post_burn_miss_distance_m": 563.13,
+      "post_burn_miss_distance_m": 569.76,
       "post_burn_pc": 0.00005691,
-      "risk_reduction_pct": 91.36,
+      "risk_reduction_pct": 91.37,
       "fuel_consumed_kg": 0.152,
       "recommended": true
     }
@@ -358,6 +361,9 @@ Request — `AIAdvisorRequest` (`schema.py:35-42`):
   "query_type": "recommendation"
 }
 ```
+
+`maneuvers` is a list: the frontend sends one entry for a single simulated burn, or all three
+(−2 / −4 / −8 cm/s) after "Compare all three", and the advisor weighs them against each other.
 
 - `ConjunctionContext` (`schema.py:12-21`) — required: `primary_name`,
   `secondary_name`, `tca_iso`, `miss_distance_m`, `pre_burn_pc`. Defaulted:
@@ -385,8 +391,8 @@ Response — `AIAdvisorResponse` (`schema.py:45-52`):
 `key_metrics` is `Dict[str, Any]` — untyped on the wire. In fallback mode it
 carries exactly `pre_burn_pc`, `post_burn_pc`, `risk_reduction_pct`,
 `fuel_consumed_kg`, `recommended_burn_delta_v_cm_s`, `maneuver_required`
-(`advisor.py:84-91`). In live mode it is whatever the model returned
-(`advisor.py:140`). Never index it blindly.
+(`generate_fallback_advice`). In live mode it is whatever the model returned
+(`get_ai_advice`). Never index it blindly.
 
 ---
 
@@ -395,6 +401,7 @@ carries exactly `pre_burn_pc`, `post_burn_pc`, `risk_reduction_pct`,
 | Code | Where | Meaning |
 |---|---|---|
 | 404 | `/api/physics/tca`, `/api/physics/maneuver` | no close approach found — a normal result |
+| 400 | `/api/physics/screening` | request could not be prepared — unparseable primary or malformed `start_utc_iso` |
 | 404 | any unrouted path | FastAPI default, `{"detail": "Not Found"}` |
 | 422 | any POST | pydantic validation failure |
 | 500 | the three physics routes | any other exception, message prefixed per route |
@@ -480,38 +487,37 @@ contend for CPU.
 | `/health`, `/api/conjunctions/envisat` | instant — literal dict / static fixture read |
 | `/api/physics/maneuver` | one refinement over a fixed ±2 h window — fastest of the physics routes |
 | `/api/physics/tca` | one fine scan across `search_duration_hours` |
-| `/api/physics/screening` | **slowest.** `skip_coarse_filter=True` (`main.py:198`) bypasses the cheap altitude/inclination pre-filter, so every candidate gets a full 60 s-timestep SGP4 scan over the whole window, then a second TCA refinement, then covariance construction and a scipy B-plane integration. Cost is linear in candidate count **and** in `search_duration_hours`. |
+| `/api/physics/screening` | **slowest.** `skip_coarse_filter=True` bypasses the cheap altitude pre-filter, so every candidate gets a full 60 s-timestep SGP4 scan over the whole window, then a second TCA refinement, then covariance construction and a scipy B-plane integration. Cost is linear in candidate count **and** in `search_duration_hours`. |
 
 Native `fetch` has no default timeout, so clients must impose their own. The
 frontend budgets 5 s for `/health`, 60 s for `/tca` and `/maneuver`, and
 180 s for `/screening` (`frontend/src/api/`).
 
 Every physics handler also calls `load.timescale()` per request
-(`main.py:142, 187, 255`). Skyfield uses builtin data, so there is no network
+(in each handler). Skyfield uses builtin data, so there is no network
 fetch, but it is redundant per-request work.
 
 ---
 
 ## 7. AI layer configuration
 
-The code calls **Google Gemini** (`gemini-2.5-flash`, `advisor.py:121`) and
-reads `GEMINI_API_KEY` or `GOOGLE_API_KEY` (`advisor.py:108-111`).
+The code calls **Google Gemini** and reads `GEMINI_API_KEY` or `GOOGLE_API_KEY`
+(`get_ai_advice` in `backend/ai/advisor.py`). Models are tried in order until one answers — `gemini-3.5-flash`, then `gemini-flash-lite-latest`, then `gemini-3.5-flash-lite` (since 2026-10-27; comma-separated
+`GEMINI_MODEL` replaces the list), each capped at 15 s so all three fit the frontend's 60 s budget. The original `gemini-2.5-flash` is retired for new API keys, and
+`gemini-3.1-flash-lite`, the default after it (commit `c64b206`), returned 503 "high demand" on every call. `.env.example` documents both variables.
 
-The docstring at `main.py:307` still says `ANTHROPIC_API_KEY`; that is stale.
-`.env.example` is correct.
-
-⚠️ **The API server never calls `load_dotenv`.** The only `load_dotenv` in
-the project is in `scripts/fetch_envisat_tles.py`. Unless `GEMINI_API_KEY` is
-exported into the uvicorn process environment, `/api/ai/advise` returns
-`is_fallback: true` in local development regardless of what `.env` contains.
+`main.py` calls `load_dotenv` on the repo-root `.env` at import time, with `override=False`, so a variable
+already exported into the uvicorn process wins over the file. With no key the endpoint returns
+`is_fallback: true` and the rule-based advisor's text.
 
 Clients should never assume a provider — trust the response shape and the
 `is_fallback` flag only, and render fallback mode visibly rather than
-presenting rule-based text as live model output.
+presenting rule-based text as live model output. The frontend shows **AI: LIVE** or **OFFLINE ADVISOR**
+from that flag.
 
 ---
 
-## 8. Tracking and continuous monitoring (added 2026-09-01)
+## 8. Tracking and continuous monitoring (added 2026-09-01, updated 2026-10-26)
 
 Screening moved from "press a button and wait" to a scheduled background pass,
 because a full all-pairs screening over a few hundred objects takes far longer
@@ -521,47 +527,58 @@ than any click can. See `backend/api/monitoring.py` for the reasoning.
 timer; the AI layer is handed completed results afterwards. Do not label this
 "AI monitoring" anywhere — it inverts the project's core claim.
 
+**Passes run in a spawned worker process**, not a thread: pure-Python SGP4 holds the GIL, and a threaded
+pass used to starve every API request for its whole duration. Measured during a pass: ~5 ms per request.
+`MONITOR_IN_PROCESS=1` reverts to the thread, for debugging.
+
 ### 8.1 `GET /api/tracking/objects`
 
 The catalogue the console tracks, as raw element sets. The server owns this set
 so the globe and the event list describe the same objects; the frontend renders
-and propagates them, but no longer chooses them.
+and propagates them, but no longer chooses them. Captured live 2026-10-26 (one object shown):
 
 ```json
 {
-  "objects": [{"id": "24946", "name": "IRIDIUM 33", "norad_id": "24946",
-               "line1": "1 24946U ...", "line2": "2 24946 ..."}],
-  "count": 111,
-  "groups": ["iridium-33-debris"],
+  "objects": [{"id": "25544", "name": "ISS (ZARYA)", "norad_id": "25544",
+               "line1": "1 25544U ...", "line2": "2 25544  51.6337 ..."}],
+  "count": 698,
+  "groups": ["stations", "cosmos-2251-debris", "iridium-33-debris"],
   "source": "live",
-  "fetched_at_unix": 1788202234.87,
+  "providers": ["space-track"],
+  "fetched_at_unix": 1793015313.99,
   "rejected": [],
   "error": null
 }
 ```
 
 **This route never fetches on the request thread.** It serves whatever set the
-server currently holds and returns in milliseconds. Refreshing is the monitor
-thread's job. It falls through to a fetch only on a genuinely cold start with
+server currently holds and returns in milliseconds. Refreshing is the monitor's
+job. It falls through to a fetch only on a genuinely cold start with
 nothing cached and no fetch already running, and that fetch is bounded by a
 total budget (`_TOTAL_FETCH_BUDGET_S`, 20 s) that stays under the frontend's
 30 s client timeout regardless of how many groups are tracked.
 
 Two consequences worth knowing:
 
-- **A cold start with CelesTrak unreachable returns `200` with `count: 0`** and
-  the reason in `error`. That is not a successful empty set, and the frontend
+- **A cold start with every provider unreachable returns `200` with `count: 0`** (or the offline set; see
+  below) and the reason in `error`. That is not a successful empty set, and the frontend
   treats it as a failure (`useLiveSatellites.js` throws rather than blanking the
-  globe). Previously this request blocked for `groups x 20 s` — 40 s for the
-  default two groups — which outlasted the browser's own timeout, so the console
-  reported a meaningless "timed out after 30000ms" instead of naming the cause.
+  globe).
 - **A failed fetch is backed off for 60 s.** Without it, every request re-ran
   the full multi-group fetch, because a failed load leaves `source` at
   `cached`/`none` and the freshness check only short-circuits on `live`.
 
 `tests/test_tracked_set_request_path.py` pins all of this.
 
-**Offline fallback.** When CelesTrak cannot be reached at all, the server falls
+**Providers.** Each group is fetched from CelesTrak first. CelesTrak blocked this project's IP on
+2026-09-06, so for any group it cannot serve the server falls back to **Space-Track**
+(`backend/api/spacetrack.py`, `gp` queries by international designator). `providers` reports which feed
+actually served the set — `celestrak`, `space-track`, or `offline:<provider>` — so `source: "live"` never
+hides which live feed it was. Space-Track's limits are hard: one login and one query per group per
+refresh, a 6 h cache, a 30 min backoff after a failure, and no retry after a rejected login. Tests never
+reach it (`tests/conftest.py` blocks it).
+
+**Offline fallback.** When no live provider can be reached, the server falls
 back to a committed set of real element sets
 (`backend/data/offline_tracked_set.json`, regenerated by
 `scripts/refresh_tracked_set.py`). It is seeded at startup, so the endpoint
@@ -575,31 +592,41 @@ screens, so events and globe markers correspond — which is what distinguishes 
 from the browser-side `snapshot` state, where they do not.
 
 - `source` is `live` | `cached` | `bundled` | `none`. **Must be surfaced in the
-  UI** —
-  rendering cached element sets as live is the same class of dishonesty as
+  UI** — rendering cached element sets as live is the same class of dishonesty as
   inventing a number.
 - `rejected` names element sets that would not parse. They never reached the
   pipeline, so they cannot appear as "no conjunction found".
 - Groups come from the `TRACKED_GROUPS` env var (comma-separated CelesTrak
-  group names). Default: `cosmos-2251-debris,iridium-33-debris`.
+  group names). Default: `stations,cosmos-2251-debris,iridium-33-debris`.
 
 ### 8.2 `GET /api/monitoring/status`
 
-Cheap enough to poll. Reports the pass without its events.
+Cheap enough to poll (the frontend polls it every 30 s). Reports the pass without its events. Captured
+live 2026-10-26:
 
 ```json
 {
-  "state": "ready", "duration_s": 11.1, "objects_tracked": 111,
-  "window_start_utc_iso": "2026-08-31T18:50:38Z", "window_hours": 24.0,
-  "event_count": 2, "high_risk_count": 0, "interval_s": 600.0,
-  "stats": {"objects_in": 111, "objects_propagated": 111,
-            "pairs_evaluated": 6105, "pairs_gated": 220,
-            "pairs_refined": 60, "truncated": true},
+  "state": "ready",
+  "started_at_unix": 1793021044.49, "finished_at_unix": 1793021213.08,
+  "duration_s": 168.6,
+  "window_start_utc_iso": "2026-10-26T13:24:08Z", "window_hours": 24.0,
+  "objects_tracked": 698, "event_count": 44, "high_risk_count": 2,
+  "stats": {"objects_in": 698, "objects_propagated": 698,
+            "pairs_evaluated": 243253, "pairs_gated": 12430,
+            "pairs_refined": 300, "truncated": true},
+  "interval_s": 900.0,
+  "restored": false,
   "error": null
 }
 ```
 
-`state` is `never_run` | `running` | `ready` | `failed`.
+`state` is `never_run` | `running` | `ready` | `failed`. While a pass is `running`, the timing fields
+(`finished_at_unix`, `duration_s`, `window_*`, `event_count`) still describe the **previous completed
+pass**, so a client can show "last took 1:23" and keep listing the old events. `started_at_unix` is the
+running pass's own start. Pass duration varies with machine load: ~80 s to ~170 s on 2026-10-26.
+
+`restored` is `true` when the pass being served was read back from disk after a backend restart rather
+than computed by this process; see §8.6.
 
 ⚠️ **`stats.truncated`** means refinement was capped (`MONITOR_MAX_REFINE`), so
 the pass is *not* a complete screening of the set. A partial screening is a
@@ -609,7 +636,8 @@ got.
 ### 8.3 `GET /api/monitoring/events`
 
 Conjunctions from the last completed pass, served from cache — returns
-instantly whatever the pipeline is doing now. Same body as 8.2 plus `events`.
+instantly whatever the pipeline is doing now. Same fields as 8.2 plus `events`; it carries `restored`
+too.
 
 Each event is either a full assessment:
 
@@ -617,7 +645,8 @@ Each event is either a full assessment:
 {"primary_name": "IRIDIUM 33 DEB", "secondary_name": "IRIDIUM 33 DEB",
  "primary_id": "36011", "secondary_id": "36083",
  "tca_utc_iso": "2026-08-31T21:14:07Z", "miss_distance_m": 1739.8,
- "pc": 3.07e-17, "relative_speed_km_s": 12.4, "threat_level": "GREEN"}
+ "pc": 3.07e-17, "relative_speed_km_s": 12.4, "threat_level": "GREEN",
+ "hard_body_radius_m": 14.5}
 ```
 
 …or a pair the physics declined to assess, carrying **no numbers at all**:
@@ -645,17 +674,29 @@ same event.
 {"alerts": [], "count": 0}
 ```
 
+**The frontend intentionally does not use this route.** A drain-on-read queue hands each alert to
+whichever single client polls first. `useConjunctionAlerts` instead decides what is new per browser
+(localStorage), matching on pair + TCA within 10 minutes, from the events in 8.3.
+
 ### 8.5 `POST /api/monitoring/refresh`
 
-Asks for a pass now. Returns immediately — the pass runs on the monitor's own
-thread. Poll 8.2 to see it finish. Never blocks a request, which matters on
-stage: a click that hangs the UI for minutes is worse than no button.
+Asks for a pass now. Returns immediately — the pass runs in the monitor's worker process. Poll 8.2 to see
+it finish. Never blocks a request, which matters on stage: a click that hangs the UI for minutes is worse
+than no button.
 
 ```json
 {"triggered": true, "state": "ready"}
 ```
 
-### 8.6 Change to `POST /api/physics/screening`
+### 8.6 Persistence across restarts
+
+Each completed pass is written to `backend/.cache/last_screening_pass.json` (gitignored; override with
+`MONITOR_STATE_PATH`). On startup the monitor serves that pass again, marked `restored: true`, until a
+fresh pass replaces it. A saved pass whose screening window has already ended is not restored. Restored
+RED events are marked as already alerted, so a restart does not re-fire their alerts. Pinned by
+`tests/test_monitor_state.py` (restore, expiry, no re-alert).
+
+### 8.7 Change to `POST /api/physics/screening`
 
 One unusable candidate no longer fails the batch (§3.4 predates this).
 
@@ -666,11 +707,59 @@ One unusable candidate no longer fails the batch (§3.4 predates this).
 - Request-level failures — unparseable primary, malformed `start_utc_iso` —
   are now **400**, not 500.
 
-### 8.7 Environment
+### 8.8 Environment
 
 | Variable | Default | Effect |
 |---|---|---|
-| `TRACKED_GROUPS` | `cosmos-2251-debris,iridium-33-debris` | CelesTrak groups forming the tracked set |
+| `TRACKED_GROUPS` | `stations,cosmos-2251-debris,iridium-33-debris` | Groups forming the tracked set |
 | `MONITOR_INTERVAL_S` | `900` | Floor on seconds between passes |
 | `MONITOR_MAX_REFINE` | `300` | Cap on stage-3 refinements per pass |
+| `MONITOR_STATE_PATH` | `backend/.cache/last_screening_pass.json` | Where the last pass is saved and restored from |
+| `MONITOR_IN_PROCESS` | unset | `1` runs passes in a thread instead of a worker process |
 | `PHYSICS_TRACE` | unset | `1` re-enables per-stage propagation/frame prints |
+| `SPACETRACK_USERNAME`, `SPACETRACK_PASSWORD` | unset | Space-Track login for the live fallback (§8.1) |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | unset, the three-model list in §7 | AI layer (§7) |
+
+---
+
+## 9. `GET /api/validation/status`
+
+Runs the project's known-answer checks and reports them, so the console can show a live **Validated**
+badge instead of asserting correctness. Implemented in `backend/api/validation.py`.
+
+Two checks, judged by the regression tests' own fixtures and bounds (never looser):
+
+- **Alfano (2005) synthetic case** — computed Pc against 0.10034, tolerance 0.001
+  (`tests/test_alfano_case.py`).
+- **Envisat / Zenith-2, October 2004** — all four prediction days screened over 12 h from
+  `2004-10-22T00:00:00Z` at a 50 km threshold, then assessed. Each day is checked against the asserted
+  bounds (miss 100–1000 m, Pc 1e-4 – 2.5e-3); the published band (miss 81–316 m, Pc 1.4e-4 – 5.5e-4,
+  TCA `05:10:35Z`) is reported alongside (`tests/test_envisat_replay.py`).
+
+Computed by the physics pipeline on first request (~0.6 s), then cached for the life of the process — the
+inputs are fixed, so the answer cannot change. **Never an error response:** a check that fails or cannot
+run says so in its entry. Shape (abridged, captured live 2026-10-26; the `days` array holds all four days,
+one is shown):
+
+```json
+{
+  "passed": true,
+  "checks": [
+    {"id": "alfano", "name": "Alfano (2005) synthetic case", "expected_pc": 0.10034,
+     "tolerance": 0.001, "computed_pc": 0.10034000000000041, "passed": true,
+     "test": "tests/test_alfano_case.py"},
+    {"id": "envisat", "name": "Envisat / Zenith-2, October 2004",
+     "days": [{"day": "oct_22", "miss_distance_m": 268.91, "pc": 0.000659,
+               "tca_utc_iso": "2004-10-22T05:10:37Z", "passed": true}],
+     "asserted": {"miss_distance_m": [100.0, 1000.0], "pc": [0.0001, 0.0025]},
+     "published": {"miss_distance_m": [81.0, 316.0], "pc": [0.00014, 0.00055],
+                   "tca_utc_iso": "2004-10-22T05:10:35Z"},
+     "passed": true, "test": "tests/test_envisat_replay.py"}
+  ],
+  "ran_at_unix": 1793015296.28,
+  "duration_s": 0.62,
+  "notes": "docs/validation-notes.md"
+}
+```
+
+`tests/test_validation_endpoint.py` pins it.

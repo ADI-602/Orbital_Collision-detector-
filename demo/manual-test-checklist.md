@@ -1,5 +1,12 @@
 # Manual sanity test — everything built 2026-08-31 / 09-01
 
+> **Historical snapshot (2026-09), partly superseded.** Its object counts (695), test count (78) and
+> "pending panel" expectations describe the build of that week; the live set is now ~698 objects, the
+> suite has 139 backend and 267 frontend tests, and the AI and maneuver panels are built. The
+> whole-demo checks are in [`demo_checklist.md`](demo_checklist.md) and
+> [`presentation_guide.md`](presentation_guide.md). Items below that still hold are the globe
+> interaction and orbit-ring checks (§1, §3c) and the maneuver checks (§3d).
+
 Work top to bottom. **Sections 1–3 are ordered by how likely I think a bug is**,
 not by feature. Sections 4+ are things I did verify automatically and you're
 re-confirming by eye.
@@ -18,7 +25,7 @@ backend\.venv\Scripts\uvicorn backend.api.main:app --port 8000
 cd frontend && npm run dev
 ```
 
-Wait for the first screening pass (~45 s at 695 objects). Check it finished:
+Wait for the first screening pass (~80–170 s at ~700 objects). Check it finished:
 
 ```bash
 curl localhost:8000/api/monitoring/status
@@ -106,7 +113,8 @@ No automated coverage exists for these. I built them and moved on.
 
 These are half-built on purpose. The test is that the UI is honest about it.
 
-- [ ] Maneuver planning and AI panels still read as explicitly pending.
+- [x] ~~Maneuver planning and AI panels still read as explicitly pending.~~ Superseded: both are built
+      (see §3d and `demo_checklist.md`).
 
 # 3b. Conjunction events, now reading the scheduled pass (NEW — 2026-09-06)
 
@@ -235,7 +243,7 @@ offline tracked set cannot produce.
 - [ ] `curl -X POST localhost:8000/api/monitoring/refresh` returns
       **immediately** (does not hang for the length of a screening pass).
 - [ ] `cd orbital-risk-advisor && backend\.venv\Scripts\python -m pytest tests/ -q`
-      → 78 passed.
+      → all green (139 passed on 2026-10-26).
 
 ---
 
@@ -250,11 +258,9 @@ Not bugs to hunt — I already know about these.
   tell me; that's the only measurement that counts.
 - **Pc renders as e.g. `2.16e-181`** for distant misses. Honest, looks broken.
   Needs a display floor.
-- **No RED events from live data** — confirmed by measurement, 0 RED / 1 YELLOW
-  / 32 GREEN across 695 objects. High-risk rows come from injected historical
-  cases by design.
-- **The alert path has never fired**, because nothing has produced a RED event
-  yet.
+- **No RED events from live data** — as measured in 2026-09: 0 RED / 1 YELLOW
+  / 32 GREEN across 695 objects. *Superseded:* on 2026-10-26 a pass over 698 live objects reported 2
+  high-risk events, and the alert path (`useConjunctionAlerts`) is built and tested.
 - **A co-located pair is pathological for the refinement stage.** Every sample
   sits at zero separation, so all 1441 of them are "local minima" and each gets
   re-scanned. Three docked ISS modules took roughly a minute of a 4-object

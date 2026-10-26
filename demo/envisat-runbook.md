@@ -7,7 +7,9 @@ time.
 This covers one section of the demo. The whole-demo pre-flight and stage
 order are in [`demo_checklist.md`](demo_checklist.md).
 
-Written 2026-08-31, against build-order step 5. Re-check the numbers in
+Written 2026-08-31, against build-order step 5; updated 2026-10-26 (the AI and maneuver panels it once
+listed as pending now exist — see §4–§5). The whole-demo script is in
+[`presentation_guide.md`](presentation_guide.md). Re-check the numbers in
 [§6](#6-the-numbers-as-verified) after any change to `backend/physics/`.
 
 ---
@@ -136,8 +138,10 @@ lands at 60 s.
 (24,000 km) 269 m is far below one pixel. The dots converge and merge, and that
 is all. Beat 5 turns that into the point rather than a disappointment.
 
-**Do not say "AI" anywhere in this section.** Nothing on the page is
-AI-generated, the page states this, and that is the strength.
+**Say what the AI does, and only that.** This tab now has an AI explanation panel, asked automatically
+after a burn is simulated. It narrates the pipeline's figures; every number on the page is physics, and
+the page says so ("No AI in any number on this page"). Never describe the AI as screening, finding or
+computing anything.
 
 ---
 
@@ -164,18 +168,20 @@ AI-generated, the page states this, and that is the strength.
 > page."*
 
 **"What hard-body radius did you use?"**
-> 14.5 m combined (`backend/api/main.py:224`).
+> 14.5 m combined, one value for every pair (`HARD_BODY_RADIUS_KM` in `backend/api/assessment.py`).
 
 **"What isn't built yet?"**
-> The AI explanation panel and the maneuver simulation. Both are labelled
-> pending regions rather than fake placeholders. Say it before a judge finds
-> it.
+> The Cosmos 2221 secondary scenario. The AI panel and the maneuver simulation
+> are built. Also volunteer the limits in `presentation_guide.md` §F before a
+> judge finds them.
 
 **"What did ESA actually do?"**
 > A −4.0 cm/s in-track braking burn at 04:20 UTC, 50 minutes before closest
 > approach, which took Pc from ~5.5e-4 to ~2.0e-4; then a +3.9 cm/s restituting
-> burn at 06:00 UTC to restore the ground-track repeat. That is quoted history,
-> not something this app computed — reproducing it is build-order step 7.
+> burn at 06:00 UTC to restore the ground-track repeat. Those are ESA's published
+> figures, not ours. Our "What ESA did" panel re-flies the first burn through our
+> own model: 269 m → 570 m, Pc 6.59e-4 → 5.69e-5. Different starting Pc, same
+> direction and order of magnitude, for the covariance reason above.
 
 ---
 
@@ -198,9 +204,9 @@ to under a metre; the small difference is the search window, not the physics.
 - **Relative speed:** 14.78 km/s
 - **Published bands** (Klinkrad et al. 2005, ESA SDC4-paper49 §6):
   81–316 m, Pc 1.4e-4 – 5.5e-4
-- **Bands the regression test asserts** (`tests/fixtures/envisat_tles.py:89-92`):
+- **Bands the regression test asserts** (`tests/fixtures/envisat_tles.py`, `MISS_DISTANCE_*` and `PC_*`):
   100–1000 m, Pc 1e-4 – 2.5e-3 — wider because we run on public-catalog TLEs
-- **Threat thresholds** (`backend/api/main.py:233`): RED ≥ 1e-4,
+- **Threat thresholds** (`threat_level()` in `backend/api/assessment.py`): RED ≥ 1e-4,
   YELLOW ≥ 1e-5, else GREEN. All four days are RED because all four clear 1e-4.
 
 ---
