@@ -203,7 +203,7 @@ Other reading: [`docs/architecture.md`](docs/architecture.md), [`docs/api_contra
 - Burns are **instantaneous along-track delta-V**, not thruster physics; propellant assumes Envisat's 8,200 kg.
 - Debris cannot manoeuvre, yet a debris-only event still offers a burn on screen.
 - Pc uses the **2D encounter-plane** method with a class-based TLE covariance, not a full 3D integral.
-- Not built yet: the Cosmos 2221 secondary scenario, a pre-recorded fallback video.
+
 
 ## 9. Data and references
 
